@@ -1,0 +1,7 @@
+[gd_resource type="Resource" script_class="TableDef" format=3 uid="uid://dfyp022skyjmw"]
+
+[ext_resource type="Script" uid="uid://wkiv8bswpywv" path="res://sim/table_def.gd" id="1_anqb4"]
+
+[resource]
+script = ExtResource("1_anqb4")
+metadata/_custom_type_script = "uid://wkiv8bswpywv"

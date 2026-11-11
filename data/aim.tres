@@ -1,0 +1,6 @@
+[gd_resource type="Resource" script_class="AimConfig" format=3 uid="uid://cnlp7q3p8ym0f"]
+
+[ext_resource type="Script" uid="uid://dc7pvqkprlfnn" path="res://input/aim_config.gd" id="1_p8u5j"]
+
+[resource]
+script = ExtResource("1_p8u5j")

@@ -1,0 +1,7 @@
+[gd_resource type="Resource" script_class="PhysicsParams" format=3 uid="uid://cp724b546tdid"]
+
+[ext_resource type="Script" uid="uid://bi2qku5cj2fvl" path="res://sim/physics_params.gd" id="1_bs4sb"]
+
+[resource]
+script = ExtResource("1_bs4sb")
+metadata/_custom_type_script = "uid://bi2qku5cj2fvl"

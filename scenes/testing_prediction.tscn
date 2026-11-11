@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://b1k0mrxye35wn"]
+
+[ext_resource type="Script" uid="uid://bw2fm7w1hfiee" path="res://tests/prediction_tests.gd" id="1_1oajb"]
+
+[node name="testing_prediction" type="Node2D" unique_id=1417503339]
+script = ExtResource("1_1oajb")

@@ -1,0 +1,79 @@
+[gd_scene format=3 uid="uid://dth1y8eeocd1p"]
+
+[ext_resource type="Script" uid="uid://c1xy81cu4bej" path="res://game/pool_game.gd" id="1_vq815"]
+[ext_resource type="Script" uid="uid://jsee07sv8eqb" path="res://view/table_view.gd" id="2_ht80v"]
+[ext_resource type="Resource" uid="uid://xt3sauvtd4d4" path="res://data/tables/london_table.tres" id="2_xsq6e"]
+[ext_resource type="Script" uid="uid://dco7sg8f2dxxb" path="res://view/balls_layer.gd" id="3_ae0qs"]
+[ext_resource type="Resource" uid="uid://cp724b546tdid" path="res://data/physics/default_physics.tres" id="3_c06dw"]
+[ext_resource type="Script" uid="uid://cw1gmatidjcxe" path="res://view/aim_overlay.gd" id="4_c4lu1"]
+[ext_resource type="Script" uid="uid://bgkrkybi0egwj" path="res://view/debug_overlay.gd" id="5_m1fu7"]
+[ext_resource type="Script" uid="uid://dlqb7c2rnfr3b" path="res://input/aim_controller.gd" id="6_xsq6e"]
+[ext_resource type="Resource" uid="uid://cnlp7q3p8ym0f" path="res://data/aim.tres" id="7_ht80v"]
+[ext_resource type="Script" uid="uid://bsf7g311syerg" path="res://ui/hud.gd" id="7_tsh5i"]
+[ext_resource type="Script" uid="uid://bjq2it12nog2f" path="res://ui/power_control.gd" id="8_c06dw"]
+[ext_resource type="Script" uid="uid://j1cfi1oskw4j" path="res://ui/fine_aim_control.gd" id="9_wlwqg"]
+[ext_resource type="Script" uid="uid://c7i4oq6upw3my" path="res://game/placement_overlay.gd" id="9_xsq6e"]
+
+[node name="pool_game" type="Node2D" unique_id=880535942]
+script = ExtResource("1_vq815")
+table_def = ExtResource("2_xsq6e")
+physics_params = ExtResource("3_c06dw")
+aim_config = ExtResource("7_ht80v")
+debug_print_shot_report = true
+
+[node name="TableView" type="Node2D" parent="." unique_id=1097856801]
+script = ExtResource("2_ht80v")
+
+[node name="BallsLayer" type="Node2D" parent="." unique_id=77291877]
+script = ExtResource("3_ae0qs")
+
+[node name="AimOverlay" type="Node2D" parent="." unique_id=815949583]
+script = ExtResource("4_c4lu1")
+line_width = 2.5
+
+[node name="DebugOverlay" type="Node2D" parent="." unique_id=553670456]
+script = ExtResource("5_m1fu7")
+
+[node name="PlacementOverlay" type="Node2D" parent="." unique_id=129081997]
+script = ExtResource("9_xsq6e")
+
+[node name="AimController" type="Node" parent="." unique_id=305176583 node_paths=PackedStringArray("world_node")]
+script = ExtResource("6_xsq6e")
+config = ExtResource("7_ht80v")
+world_node = NodePath("..")
+
+[node name="UI" type="CanvasLayer" parent="." unique_id=1750779049]
+
+[node name="HUD" type="Control" parent="UI" unique_id=37903551]
+layout_mode = 3
+anchors_preset = 0
+offset_right = 40.0
+offset_bottom = 40.0
+script = ExtResource("7_tsh5i")
+
+[node name="FinAimControl" type="Control" parent="UI/HUD" unique_id=184050861]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(30, 400)
+anchors_preset = 0
+offset_left = 1090.0
+offset_top = 130.0
+offset_right = 1120.0
+offset_bottom = 530.0
+script = ExtResource("9_wlwqg")
+strip_color = Color(0.2673044, 0.26730418, 0.2673042, 0.6)
+
+[node name="VBoxContainer" type="VBoxContainer" parent="UI" unique_id=1593733105]
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -1125.0
+offset_top = 116.0
+offset_right = -1085.0
+offset_bottom = 551.0
+grow_horizontal = 0
+
+[node name="PowerControl" type="Control" parent="UI/VBoxContainer" unique_id=2134219488]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(40, 400)
+layout_mode = 2
+script = ExtResource("8_c06dw")

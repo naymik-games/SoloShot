@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://c3xaqea5ksdop"]
+
+[ext_resource type="Script" uid="uid://ush5m4hkpwt2" path="res://tests/sim_tests.gd" id="1_ryjsw"]
+
+[node name="testing_sim" type="Node2D" unique_id=552916356]
+script = ExtResource("1_ryjsw")
