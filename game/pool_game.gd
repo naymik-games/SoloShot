@@ -1,6 +1,10 @@
 class_name PoolGame
 extends Node2D
-## Conductor: owns live state, simulator, mode, and the fixed-timestep loop.
+## Conductor: owns live state, simulator, mode and the phase machine.
+## The detail work lives in helpers:
+##   ScreenLayout  - where the table, controls, tray and spin control sit on screen
+##   ShotRunner    - fixed-timestep simulation of one shot (+ its ShotReport)
+##   PlacementFlow - ball-in-hand UI after a scratch or foul
 
 enum Phase { SETUP, AIMING, PLACING, SIMULATING, RESOLVING, GAME_OVER }
 enum ModeType { FREE_PRACTICE, NINE_BALL, TIME_TRIAL }
@@ -11,32 +15,12 @@ enum ModeType { FREE_PRACTICE, NINE_BALL, TIME_TRIAL }
 @export var table_def: TableDef
 @export var physics_params: PhysicsParams
 @export var aim_config: AimConfig
+## Screen layout (table insets, side controls, spin control). Empty = defaults.
+@export var screen_layout: ScreenLayout
 ## Optional starting layout handed to the game mode.
 @export var layout: LayoutDef
 ## Prints a one-line summary of each shot (first contact, pockets, cushion contact) to the output panel.
 @export var debug_print_shot_report: bool = false
-## Pixels kept free between the pocketed-ball tray and the top of the table area.
-@export var tray_gap_px: float = 6.0
-
-@export_group("Table layout (fractions of the screen kept clear around the table)")
-## The table is scaled to fit inside the screen minus these insets.
-## Power bar sits in the left margin, fine-aim strip in the right margin,
-## tray in the top band, Place button / messages in the bottom band.
-@export_range(0.0, 0.4, 0.005) var table_inset_left: float = 0.065
-@export_range(0.0, 0.4, 0.005) var table_inset_right: float = 0.065
-@export_range(0.0, 0.4, 0.005) var table_inset_top: float = 0.085
-@export_range(0.0, 0.4, 0.005) var table_inset_bottom: float = 0.10
-
-@export_group("Side controls")
-## Gap between the table and the power / fine-aim controls.
-@export var side_control_gap_px: float = 12.0
-## Control height as a fraction of the table's height (0 = keep the control's own size).
-@export_range(0.0, 1.0, 0.05) var side_control_height_fraction: float = 0.8
-
-@export_group("Spin control")
-## Diameter of the cue-ball spin control, drawn in the bottom-right corner (inside the safe area).
-@export var spin_control_size_px: float = 96.0
-@export var spin_control_margin_px: float = 10.0
 
 # Typed so GDScript can check member access (shot_requested, mapper, etc.).
 @onready var table_view: TableView = $TableView
@@ -49,10 +33,7 @@ enum ModeType { FREE_PRACTICE, NINE_BALL, TIME_TRIAL }
 # Unique-name nodes: enable "Access as Unique Name" on each in the scene tree.
 @onready var power_control: PowerControl = %PowerControl
 @onready var fine_aim: FineAimControl = %FinAimControl
-@onready var home_button: Control = %home_button# adjust path if needed
-var _home_base: Vector4   # left, top, right, bottom offsets from the editor
-
-
+@onready var home_button: Control = %home_button
 
 var state: SimState
 var simulator: PoolSimulator
@@ -60,32 +41,28 @@ var predictor: ShotPredictor
 var mode: GameMode
 var mapper: CoordinateMapper
 var phase: Phase = Phase.SETUP
+var runner: ShotRunner
 
-var _accumulator: float = 0.0
-var _shot_events: Array[SimEvent] = []
-var _report: ShotReport = ShotReport.new()  # Rebuilt for every shot.
+var cue_stick: CueStick
+## History of pocketed object balls, and the tray that displays it.
+var pocketed_log: PocketedLog
+var tray: PocketedTray
+var placement_flow: PlacementFlow
+var spin_control: SpinControl
+## Number of shots taken so far (the shot being played counts).
+var shots_taken: int = 0
+
+var _ui_root: Node
 var _prediction_dirty: bool = true
 var _score: int = 0
-const MAX_STEPS_PER_FRAME: int = 20
+var _cue_placement: CuePlacement
 
 ## Break handling: the first shot after a fresh rack uses the break speed cap and aim error.
 var _is_break_shot: bool = false
 var _shot_rng := RandomNumberGenerator.new()
 
-var cue_stick: CueStick
 
-## History of pocketed object balls, and the tray that displays it.
-var pocketed_log: PocketedLog
-var tray: PocketedTray
-## Number of shots taken so far (the shot being played counts).
-var shots_taken: int = 0
-
-## Cue ball placement (ball in hand) after a scratch or foul.
-var placement_controller: CuePlacementController
-var placement_overlay: PlacementOverlay
-var place_button: Button
-var spin_control: SpinControl
-var _cue_placement: CuePlacement
+# ---------------------------------------------------------------- setup
 
 func _ready() -> void:
 	# Mode picked on the home menu overrides the inspector value.
@@ -95,20 +72,39 @@ func _ready() -> void:
 	assert(physics_params != null, "Assign physics_params in the inspector.")
 	if aim_config == null:
 		aim_config = AimConfig.new()
+	if screen_layout == null:
+		screen_layout = ScreenLayout.new()
 
-	# --- Core objects (order matters: later steps need these to exist) ---
+	_ui_root = get_node_or_null("UI")
+	if _ui_root == null:
+		_ui_root = CanvasLayer.new()
+		add_child(_ui_root)
+
+	# Order matters: later steps need the objects built by earlier ones.
+	_build_core()
+	_build_views()
+	_wire_aim_input()
+	_build_cue_stick()
+	_build_pocketed_tray()
+	_build_placement()
+	_build_spin_control()
+	_start_game()
+
+
+func _build_core() -> void:
 	TableBuilder.build(table_def)
 	simulator = PoolSimulator.new(table_def, physics_params)
 	predictor = ShotPredictor.new(simulator, aim_config)
 	state = SimState.new()
+	runner = ShotRunner.new(simulator, state, physics_params)
 	mapper = CoordinateMapper.new()
 	balls_layer.ball_radius = table_def.ball_radius
+	screen_layout.bind_home_button(home_button)  # before the first safe-area shift
 	_on_viewport_resized()
 	get_viewport().size_changed.connect(_on_viewport_resized)
 
-	_remember_home_button()
 
-	# --- Views ---
+func _build_views() -> void:
 	aim_overlay.mapper = mapper
 	aim_overlay.config = aim_config
 	aim_overlay.ball_radius = table_def.ball_radius
@@ -117,82 +113,59 @@ func _ready() -> void:
 		debug_overlay.table = table_def
 		debug_overlay.mapper = mapper
 
-	# --- Input: share one AimConfig so tuning the .tres affects every control ---
+
+## Input: one AimConfig is shared so tuning the .tres affects every control.
+func _wire_aim_input() -> void:
 	aim_controller.mapper = mapper
 	aim_controller.config = aim_config
 	aim_controller.world_node = self
 	fine_aim.config = aim_config
 
-
 	aim_controller.shot_requested.connect(_on_shot_requested)
 	aim_controller.aim_changed.connect(_on_aim_changed)
 	aim_controller.input_enabled_changed.connect(func(_e: bool) -> void: _sync_ui())
 	power_control.power_changed.connect(aim_controller.set_power_input)
+	power_control.released.connect(aim_controller.release_power)
 	fine_aim.nudge.connect(aim_controller.nudge_angle)
 
-	
-	power_control.released.connect(aim_controller.release_power)
-	# --- Cue stick (visual only) ---
+
+## Visual only.
+func _build_cue_stick() -> void:
 	cue_stick = CueStick.new()
 	cue_stick.mapper = mapper
 	cue_stick.aim = aim_controller.aim
 	cue_stick.ball_radius = table_def.ball_radius
 	add_child(cue_stick)
 	move_child(cue_stick, aim_overlay.get_index() + 1)
-	
-	# --- Pocketed-ball log + tray (above the table) ---
+
+
+## Pocketed-ball log + tray (in the band above the table).
+func _build_pocketed_tray() -> void:
 	pocketed_log = PocketedLog.new()
 	tray = PocketedTray.new()
 	tray.setup(pocketed_log, state, table_def.ball_radius, mapper)
 	add_child(tray)
-	tray.layout(_tray_strip())
+	tray.layout(screen_layout.tray_strip(get_viewport_rect().size))
 	pocketed_log.changed.connect(tray.refresh)
 
-	# --- Cue ball placement (ball in hand after a scratch or foul) ---
-	placement_controller = CuePlacementController.new()
-	placement_controller.mapper = mapper
-	placement_controller.table = table_def
-	placement_controller.world_node = self
-	add_child(placement_controller)
-	placement_controller.placement_changed.connect(_on_placement_changed)
-	placement_controller.confirmed.connect(_on_placement_confirmed)
 
-	placement_overlay = PlacementOverlay.new()
-	placement_overlay.mapper = mapper
-	placement_overlay.table = table_def
-	placement_overlay.visible = false
-	add_child(placement_overlay)
-	move_child(placement_overlay, balls_layer.get_index() + 1)
+## Cue ball placement (ball in hand after a scratch or foul).
+func _build_placement() -> void:
+	placement_flow = PlacementFlow.new()
+	placement_flow.setup(self, _ui_root, mapper, table_def, balls_layer)
+	placement_flow.moved.connect(_on_placement_moved)
+	placement_flow.confirmed.connect(_on_placement_confirmed)
 
-	var ui_root: Node = get_node_or_null("UI")
-	if ui_root == null:
-		ui_root = CanvasLayer.new()
-		add_child(ui_root)
-	place_button = Button.new()
-	place_button.text = "Place cue ball"
-	place_button.custom_minimum_size = Vector2(220.0, 44.0)
-	place_button.visible = false
-	place_button.pressed.connect(placement_controller.confirm)
-	ui_root.add_child(place_button)
-	# Centered in the band below the table: 220 x 44, 10 px above the bottom edge.
-	place_button.set_anchor(SIDE_LEFT, 0.5)
-	place_button.set_anchor(SIDE_RIGHT, 0.5)
-	place_button.set_anchor(SIDE_TOP, 1.0)
-	place_button.set_anchor(SIDE_BOTTOM, 1.0)
-	place_button.offset_left = -110.0
-	place_button.offset_right = 110.0
-	place_button.offset_top = -54.0
-	place_button.offset_bottom = -10.0
-	place_button.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	place_button.grow_vertical = Control.GROW_DIRECTION_BEGIN
 
-	# --- Spin control (cue ball face: tap/drag where the cue strikes) ---
+## Spin control (cue ball face: tap/drag where the cue strikes).
+func _build_spin_control() -> void:
 	spin_control = SpinControl.new()
-	ui_root.add_child(spin_control)
+	_ui_root.add_child(spin_control)
 	spin_control.spin_changed.connect(aim_controller.set_spin_input)
 	_layout_spin_control()
 
-	# --- Rules ---
+
+func _start_game() -> void:
 	mode = _create_mode()
 	mode.setup(state, table_def)
 	_prepare_fresh_rack()
@@ -222,6 +195,8 @@ func _refresh_hud_status() -> void:
 		hud.set_status(mode.status_text())
 
 
+# ---------------------------------------------------------------- frame loop
+
 func _physics_process(delta: float) -> void:
 	if phase == Phase.AIMING or phase == Phase.PLACING or phase == Phase.SIMULATING:
 		mode.tick(delta)
@@ -241,28 +216,12 @@ func _physics_process(delta: float) -> void:
 				_update_prediction()
 
 
-# ---------------------------------------------------------------- simulation
-
 func _run_simulation(delta: float) -> void:
-	_accumulator += delta
-	var steps := 0
-	while _accumulator >= physics_params.substep and steps < MAX_STEPS_PER_FRAME:
-		simulator.step(state, _shot_events)
-		_accumulator -= physics_params.substep
-		steps += 1
-		if not state.any_moving():
-			break
-
-	# If we hit the cap, drop the backlog so a lag spike can't snowball.
-	if steps >= MAX_STEPS_PER_FRAME:
-		_accumulator = minf(_accumulator, physics_params.substep)
-
-	# Hand this frame's events to the rules layer (it must not keep the array), then clear.
-	if not _shot_events.is_empty():
-		_report.add_events(_shot_events)
-		pocketed_log.add_events(_shot_events, shots_taken)
-		mode.on_events(_shot_events, state)
-		_shot_events.clear()
+	# Hand this frame's events to the rules layer (it must not keep the array).
+	var events := runner.advance(delta)
+	if not events.is_empty():
+		pocketed_log.add_events(events, shots_taken)
+		mode.on_events(events, state)
 
 	balls_layer.sync_from(state, mapper)
 
@@ -280,10 +239,8 @@ func _on_shot_requested(shot: Shot) -> void:
 	var cue_offset := aim_controller.aim.spin * physics_params.max_cue_offset
 	simulator.apply_shot(state, shot, _is_break_shot, _shot_rng, cue_offset)
 	_is_break_shot = false
-	_shot_events.clear()
-	_report = ShotReport.new()
+	runner.begin()
 	shots_taken += 1
-	_accumulator = 0.0
 	_set_phase(Phase.SIMULATING)
 
 
@@ -291,46 +248,68 @@ func _on_shot_requested(shot: Shot) -> void:
 
 func _set_phase(new_phase: Phase) -> void:
 	phase = new_phase
-	_set_placement_ui(new_phase == Phase.PLACING)
+	var placing := new_phase == Phase.PLACING
+	_set_aim_controls_visible(not placing)
+	if not placing:
+		placement_flow.set_active(false)
 	match phase:
-		Phase.SETUP:
-			aim_controller.set_input_enabled(false)
-			aim_overlay.clear()
-			cue_stick.visible = false
 		Phase.AIMING:
-			var cue := state.get_cue_ball()
-			if cue != null and cue.is_on_table():
-				aim_controller.begin_aiming(cue.pos)
-				_prediction_dirty = true
-				cue_stick.refresh()
-				cue_stick.visible = true
-			else:
-				push_warning("AIMING phase with no cue ball on the table.")
-				aim_controller.set_input_enabled(false)
-				aim_overlay.clear()
-				cue_stick.visible = false
+			_enter_aiming()
 		Phase.PLACING:
-			aim_controller.set_input_enabled(false)
-			aim_overlay.clear()
-			cue_stick.visible = false
-			placement_controller.begin(state, _cue_placement)
-		Phase.SIMULATING:
-			aim_controller.set_input_enabled(false)
-			aim_overlay.clear()
-			cue_stick.visible = false
+			_enter_idle()
+			placement_flow.begin(state, _cue_placement)
 		Phase.RESOLVING:
 			_resolve_shot()
-		Phase.GAME_OVER:
-			aim_controller.set_input_enabled(false)
-			aim_overlay.clear()
-			cue_stick.visible = false
+		_:  # SETUP, SIMULATING, GAME_OVER
+			_enter_idle()
+
+
+## No aiming: input off, overlay and cue stick hidden.
+func _enter_idle() -> void:
+	aim_controller.set_input_enabled(false)
+	aim_overlay.clear()
+	cue_stick.visible = false
+
+
+func _enter_aiming() -> void:
+	var cue := state.get_cue_ball()
+	if cue != null and cue.is_on_table():
+		aim_controller.begin_aiming(cue.pos)
+		_prediction_dirty = true
+		cue_stick.refresh()
+		cue_stick.visible = true
+	else:
+		push_warning("AIMING phase with no cue ball on the table.")
+		_enter_idle()
+
+
+## Aiming controls are hidden while the player is placing the cue ball.
+func _set_aim_controls_visible(visible_now: bool) -> void:
+	power_control.visible = visible_now
+	fine_aim.visible = visible_now
+	if spin_control != null:
+		spin_control.visible = visible_now
 
 
 func _resolve_shot() -> void:
 	aim_controller.set_input_enabled(false)
 	if debug_print_shot_report:
-		print("Shot report: ", _report.describe())
-	var result := mode.on_shot_ended(state, _report)  # Mode may move/respot balls in `state`.
+		print("Shot report: ", runner.report.describe())
+	var result := mode.on_shot_ended(state, runner.report)  # Mode may move/respot balls in `state`.
+	_apply_result(result)
+	if result != null and result.game_over:
+		_set_phase(Phase.GAME_OVER)
+		return
+
+	var next_placement := _choose_cue_placement(result)
+	if next_placement != null and next_placement.mode != CuePlacement.Mode.NONE:
+		_begin_cue_placement(next_placement)
+	else:
+		_set_phase(Phase.AIMING)
+
+
+## Score, messages, rerack and view refresh after the mode has ruled on a shot.
+func _apply_result(result: ShotResult) -> void:
 	if result != null:
 		_score += result.score_delta
 		if hud != null:
@@ -345,25 +324,22 @@ func _resolve_shot() -> void:
 		_prepare_fresh_rack()
 	balls_layer.sync_from(state, mapper)
 	tray.refresh()  # The mode may have respotted or reracked balls.
-	if result != null and result.game_over:
-		_set_phase(Phase.GAME_OVER)
-		return
 
-	var placement: CuePlacement = null
+
+## What the mode asked for, plus the safety nets: a pocketed cue ball is never left off the
+## table, and a new rack that landed on the cue ball moves it clear.
+func _choose_cue_placement(result: ShotResult) -> CuePlacement:
+	var requested: CuePlacement = null
 	if result != null:
-		placement = result.cue_placement
+		requested = result.cue_placement
 	var cue := state.get_cue_ball()
-	if placement == null and cue != null:
+	if requested == null and cue != null:
 		if not cue.is_on_table():
-			# The mode didn't say where the pocketed cue ball goes: never leave the table without one.
-			placement = CuePlacement.fixed(CuePlacement.head_spot(table_def))
-		elif result != null and result.rerack != null and CuePlacer.overlaps_other_ball(cue.pos, state, table_def):
-			# The new rack landed on the cue ball: move it clear (nearest free spot to the head spot).
-			placement = CuePlacement.fixed(CuePlacement.head_spot(table_def))
-	if placement != null and placement.mode != CuePlacement.Mode.NONE:
-		_begin_cue_placement(placement)
-	else:
-		_set_phase(Phase.AIMING)
+			return CuePlacement.fixed(CuePlacement.head_spot(table_def))
+		if result != null and result.rerack != null \
+				and CuePlacer.overlaps_other_ball(cue.pos, state, table_def):
+			return CuePlacement.fixed(CuePlacement.head_spot(table_def))
+	return requested
 
 
 # ---------------------------------------------------------------- break
@@ -396,33 +372,13 @@ func _begin_cue_placement(placement: CuePlacement) -> void:
 		_set_phase(Phase.PLACING)  # Player drags the ball and confirms.
 
 
-func _on_placement_changed() -> void:
+func _on_placement_moved() -> void:
 	balls_layer.sync_from(state, mapper)
-	var cue := state.get_cue_ball()
-	if cue != null:
-		placement_overlay.show_placement(_cue_placement, cue.pos, placement_controller.valid)
-	place_button.disabled = not placement_controller.valid
 
 
 func _on_placement_confirmed() -> void:
 	_set_phase(Phase.AIMING)
 
-
-## Shows the placement UI (overlay + Place button) and hides the aiming controls, or the reverse.
-func _set_placement_ui(placing: bool) -> void:
-	if placement_overlay == null or place_button == null:
-		return
-	placement_overlay.visible = placing
-	place_button.visible = placing
-	if not placing:
-		placement_controller.cancel_input()
-	#for control in [fine_aim.get_parent(), power_control.get_parent()]:
-		#if control is CanvasItem and control != get_node_or_null("UI"):
-			#control.visible = not placing
-	power_control.visible = not placing
-	fine_aim.visible = not placing
-	if spin_control != null:
-		spin_control.visible = not placing
 
 # ---------------------------------------------------------------- aiming / UI
 
@@ -440,6 +396,7 @@ func _on_aim_changed() -> void:
 	if cue_stick != null:
 		cue_stick.refresh()
 
+
 func _sync_ui() -> void:
 	power_control.set_value(aim_controller.aim.power_input)
 	power_control.enabled = aim_controller.input_enabled
@@ -447,11 +404,17 @@ func _sync_ui() -> void:
 		spin_control.set_value(aim_controller.aim.spin)
 		spin_control.enabled = aim_controller.input_enabled
 
+
+func _layout_spin_control() -> void:
+	screen_layout.place_spin_control(spin_control, get_viewport())
+
+
 func _on_viewport_resized() -> void:
-	mapper.fit_to_area(table_def, _table_area())
-	_layout_side_controls(mapper.table_rect)
+	var viewport_size := get_viewport_rect().size
+	mapper.fit_to_area(table_def, screen_layout.table_area(viewport_size))
+	screen_layout.place_side_controls(mapper.table_rect, viewport_size, power_control, fine_aim)
 	_layout_spin_control()
-	_apply_home_button_safe_area()
+	screen_layout.apply_home_button_safe_area(get_viewport())
 	table_view.setup(table_def, mapper)
 	if balls_layer != null and state != null:
 		balls_layer.sync_from(state, mapper)
@@ -459,68 +422,6 @@ func _on_viewport_resized() -> void:
 	if cue_stick != null:
 		cue_stick.refresh()
 	if tray != null:
-		tray.layout(_tray_strip())
-	if placement_overlay != null:
-		placement_overlay.queue_redraw()
-
-## The band above the table, used by the pocketed-ball tray.
-func _tray_strip() -> Rect2:
-	var area := _table_area()
-	return Rect2(area.position.x, 0.0, area.size.x, maxf(area.position.y - tray_gap_px, 0.0))
-
-## The part of the screen reserved for the table (everything except the UI insets).
-func _table_area() -> Rect2:
-	var v := get_viewport_rect().size
-	var left := v.x * table_inset_left
-	var top := v.y * table_inset_top
-	return Rect2(left, top, v.x - left - v.x * table_inset_right, v.y - top - v.y * table_inset_bottom)
-
-
-func _layout_side_controls(table_rect: Rect2) -> void:
-	if power_control == null or fine_aim == null:
-		return
-	_place_beside(power_control, table_rect, true)    # left of the table
-	_place_beside(fine_aim, table_rect, false)        # right of the table
-
-
-func _layout_spin_control() -> void:
-	if spin_control == null:
-		return
-	var safe := SafeArea.get_rect(get_viewport())
-	var d := spin_control_size_px
-	spin_control.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	spin_control.custom_minimum_size = Vector2(d, d)
-	spin_control.size = Vector2(d, d)
-	spin_control.position = Vector2(
-		safe.end.x - d - spin_control_margin_px,
-		safe.end.y - d - spin_control_margin_px)
-
-
-func _place_beside(ctrl: Control, table_rect: Rect2, on_left: bool) -> void:
-	if side_control_height_fraction > 0.0:
-		var h := table_rect.size.y * side_control_height_fraction
-		ctrl.custom_minimum_size.y = h
-		ctrl.size.y = h
-	ctrl.set_anchors_preset(Control.PRESET_TOP_LEFT)  # plain pixel positioning
-	var x: float
-	if on_left:
-		x = table_rect.position.x - ctrl.size.x - side_control_gap_px
-	else:
-		x = table_rect.end.x + side_control_gap_px
-	x = clampf(x, 0.0, get_viewport_rect().size.x - ctrl.size.x)  # never off-screen
-	ctrl.position = Vector2(x, table_rect.get_center().y - ctrl.size.y * 0.5)
-
-
-func _remember_home_button() -> void:
-	_home_base = Vector4(home_button.offset_left, home_button.offset_top,
-	home_button.offset_right, home_button.offset_bottom)
-
-func _apply_home_button_safe_area() -> void:
-	var vp := get_viewport_rect()
-	var safe := SafeArea.get_rect(get_viewport())
-	var dx := safe.position.x - vp.position.x
-	var dy := safe.position.y - vp.position.y
-	home_button.offset_left = _home_base.x + dx
-	home_button.offset_top = _home_base.y + dy
-	home_button.offset_right = _home_base.z + dx
-	home_button.offset_bottom = _home_base.w + dy
+		tray.layout(screen_layout.tray_strip(viewport_size))
+	if placement_flow != null:
+		placement_flow.redraw()
