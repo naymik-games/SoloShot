@@ -13,13 +13,16 @@
 [ext_resource type="Script" uid="uid://bjq2it12nog2f" path="res://ui/power_control.gd" id="8_c06dw"]
 [ext_resource type="Script" uid="uid://j1cfi1oskw4j" path="res://ui/fine_aim_control.gd" id="9_wlwqg"]
 [ext_resource type="Script" uid="uid://c7i4oq6upw3my" path="res://game/placement_overlay.gd" id="9_xsq6e"]
+[ext_resource type="Texture2D" uid="uid://cg7fwibpmsoc3" path="res://art/menuList.png" id="14_xsq6e"]
 
 [node name="pool_game" type="Node2D" unique_id=880535942]
 script = ExtResource("1_vq815")
+mode_type = 2
 table_def = ExtResource("2_xsq6e")
 physics_params = ExtResource("3_c06dw")
 aim_config = ExtResource("7_ht80v")
 debug_print_shot_report = true
+spin_control_size_px = 80.0
 
 [node name="TableView" type="Node2D" parent="." unique_id=1097856801]
 script = ExtResource("2_ht80v")
@@ -62,6 +65,27 @@ offset_bottom = 530.0
 script = ExtResource("9_wlwqg")
 strip_color = Color(0.2673044, 0.26730418, 0.2673042, 0.6)
 
+[node name="PowerControl" type="Control" parent="UI/HUD" unique_id=2134219488]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(40, 400)
+anchors_preset = 0
+offset_left = 27.0
+offset_top = 116.0
+offset_right = 67.0
+offset_bottom = 516.0
+script = ExtResource("8_c06dw")
+
+[node name="home_button" type="TextureButton" parent="UI/HUD" unique_id=2126450666]
+unique_name_in_owner = true
+modulate = Color(0.90533507, 0.9053352, 0.90533507, 1)
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 0
+offset_right = 64.0
+offset_bottom = 64.0
+texture_normal = ExtResource("14_xsq6e")
+ignore_texture_size = true
+stretch_mode = 4
+
 [node name="VBoxContainer" type="VBoxContainer" parent="UI" unique_id=1593733105]
 anchors_preset = 1
 anchor_left = 1.0
@@ -72,8 +96,4 @@ offset_right = -1085.0
 offset_bottom = 551.0
 grow_horizontal = 0
 
-[node name="PowerControl" type="Control" parent="UI/VBoxContainer" unique_id=2134219488]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(40, 400)
-layout_mode = 2
-script = ExtResource("8_c06dw")
+[connection signal="pressed" from="UI/HUD/home_button" to="UI/HUD" method="_on_home_button_pressed"]

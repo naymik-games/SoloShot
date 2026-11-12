@@ -6,6 +6,9 @@ var cue_ball_pos: Vector2 = Vector2.ZERO  ## Meters.
 var angle: float = 0.0  ## Radians, wrapped to [-PI, PI].
 var power_input: float = 0.0  ## Raw control value 0..1 (what the power bar shows).
 var power: float = 0.0  ## Curved power 0..1 (what the Shot uses).
+## Where the cue strikes the cue ball, from the spin control: unit disc, x = right (+), y = top (+).
+## (0, 0) = centre ball, no spin. Reset by AimController.begin_aiming(), i.e. after every shot.
+var spin: Vector2 = Vector2.ZERO
 
 
 func angle_degrees() -> float:

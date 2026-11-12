@@ -1,6 +1,6 @@
 class_name PoolSimulator
 extends RefCounted
-## Deterministic 2D pool physics (no spin yet). Stateless apart from table + params + a rest flag,
+## Deterministic 2D pool physics with cue-ball spin. Stateless apart from table + params + a rest flag,
 ## so it works the same on the live state or a clone (use a separate instance for prediction).
 ##
 ## One substep:
@@ -12,11 +12,19 @@ extends RefCounted
 ##   4. pockets           capture radius, plus a backstop for balls that left the playfield
 ##   5. rest              emit BALLS_AT_REST once everything has stopped
 ##
-## Friction model (no spin): a ball starts SLIDING after a shot, collision, or cushion hit.
-## Sliding friction removes 2/7 of its speed (the physics of a plain-sliding sphere reaching
-## rolling), then the ball is ROLLING and only the small rolling friction applies.
+## Friction / spin model. Every ball has a "slip" velocity: the velocity of the point touching the cloth,
+##     slip = vel + roll_spin          (roll_spin: see BallState; pure rolling means slip == 0)
+## While slip != 0 the ball is SLIDING: sliding friction pushes against the slip, changing vel at
+## `a` and roll_spin at 5/2 * a, so the slip shrinks at 7/2 * a until it reaches zero and the ball is
+## ROLLING (then only the small rolling friction applies). With no spin the slip starts equal to vel,
+## which gives the classic loss of 2/7 of the speed before rolling begins.
+## Spin survives ball-ball contacts (that is what makes follow and draw work): a collision just
+## changes vel, so the ball is slipping again and friction takes over.
+## Side spin only matters at cushions (see _apply_cushion_english) and slowly decays on the cloth.
 
-const SLIDE_LOSS_FRACTION: float = 2.0 / 7.0
+## A uniform solid sphere: friction changes roll_spin 5/2 as fast as it changes vel, so slip decays at 1 + 5/2.
+const ROLL_SPIN_RATE: float = 2.5
+const SLIP_DECAY_RATE: float = 1.0 + ROLL_SPIN_RATE
 const MAX_EVENTS_PER_SUBSTEP: int = 64
 const EPS_TIME: float = 1e-12
 const EPS_DIST2: float = 1e-12
@@ -37,11 +45,30 @@ func _init(p_table: TableDef = null, p_params: PhysicsParams = null) -> void:
 
 
 ## Sets the cue ball velocity from a shot.
-func apply_shot(state: SimState, shot: Shot) -> void:
+## is_break: use the break speed cap instead of max_shot_speed.
+## rng: when given (and is_break), adds power-scaled aim error. Leave it null for prediction
+## so the predicted line stays clean and deterministic.
+## cue_offset: where the tip strikes the cue ball, in ball radii from its centre, as seen from behind
+## the cue: x = right (+) / left (-), y = above centre (+, follow) / below (-, draw).
+## Vector2.ZERO (the default, and what prediction uses) is a plain centre-ball hit.
+func apply_shot(state: SimState, shot: Shot, is_break: bool = false, rng: RandomNumberGenerator = null, cue_offset: Vector2 = Vector2.ZERO) -> void:
 	var cue := state.get_cue_ball()
 	if cue == null or not cue.is_on_table():
 		return
-	cue.vel = shot.direction.normalized() * shot.power * params.max_shot_speed
+	var dir := shot.direction.normalized()
+	var top_speed := params.max_shot_speed
+	if is_break:
+		top_speed = params.break_max_shot_speed
+		if rng != null and params.break_aim_error_deg > 0.0:
+			# Clamped gaussian so a rare outlier can't send the cue ball somewhere absurd.
+			var z := clampf(rng.randfn(0.0, 1.0), -2.5, 2.5)
+			dir = dir.rotated(deg_to_rad(params.break_aim_error_deg) * z * shot.power)
+	var speed := shot.power * top_speed
+	cue.vel = dir * speed
+	# A hit at height y gives roll spin 5/2 * y * speed against the travel direction (y = 0.4 is a
+	# natural roll from the start); a hit at x gives side spin 5/2 * x * speed. Right english = anticlockwise.
+	cue.roll_spin = dir * (-ROLL_SPIN_RATE * cue_offset.y * speed)
+	cue.side_spin = -ROLL_SPIN_RATE * cue_offset.x * speed
 	_enter_sliding(cue)
 	_rest_emitted = false
 
@@ -72,32 +99,41 @@ func _apply_friction(state: SimState, dt: float) -> void:
 	for b in state.balls:
 		if not b.is_on_table() or not b.is_moving():
 			continue
-		var speed := b.vel.length()
+		var remaining := dt
 		if not b.rolling:
-			var loss := a_slide * dt
-			if loss >= b.slide_remaining:
-				# Sliding ends inside this substep: slide for part of it, roll for the rest.
-				var t_slide := b.slide_remaining / a_slide if a_slide > 0.0 else dt
-				speed -= b.slide_remaining
-				b.slide_remaining = 0.0
+			var slip = b.vel + b.roll_spin
+			var slip_speed = slip.length()
+			var dir = slip / slip_speed if slip_speed > 0.0 else Vector2.ZERO
+			var t_slide = slip_speed / (SLIP_DECAY_RATE * a_slide) if a_slide > 0.0 else 0.0
+			if t_slide <= dt:
+				# Sliding ends inside this substep: slide until the slip is gone, roll for the rest.
+				b.vel -= dir * (a_slide * t_slide)
+				b.roll_spin = -b.vel
 				b.rolling = true
-				speed -= a_roll * maxf(dt - t_slide, 0.0)
+				remaining = dt - t_slide
 			else:
-				speed -= loss
-				b.slide_remaining -= loss
+				b.vel -= dir * (a_slide * dt)
+				b.roll_spin -= dir * (ROLL_SPIN_RATE * a_slide * dt)
+				remaining = 0.0
+		if b.rolling and remaining > 0.0:
+			var speed := b.vel.length() - a_roll * remaining
+			if speed <= params.stop_speed:
+				b.vel = Vector2.ZERO
+				b.roll_spin = Vector2.ZERO
+			else:
+				b.vel = b.vel.normalized() * speed
+				b.roll_spin = -b.vel
+		# Side spin bleeds off into the cloth, and is gone once the ball has stopped.
+		if b.vel == Vector2.ZERO and b.rolling:
+			b.side_spin = 0.0
 		else:
-			speed -= a_roll * dt
-
-		if speed <= params.stop_speed:
-			b.vel = Vector2.ZERO
-			b.slide_remaining = 0.0
-		else:
-			b.vel = b.vel.normalized() * speed
+			b.side_spin = move_toward(b.side_spin, 0.0, params.side_spin_decay * dt)
 
 
+## A ball (re)starts slipping on the cloth. Its spin is kept: slip = vel + roll_spin is
+## recomputed from whatever velocity the contact left it with.
 func _enter_sliding(b: BallState) -> void:
 	b.rolling = false
-	b.slide_remaining = SLIDE_LOSS_FRACTION * b.vel.length()
 
 
 # ------------------------------------------------------------------ advance + exact contacts
@@ -262,6 +298,8 @@ func _bounce_off_cushion(b: BallState, n: Vector2, time: float, events: Array[Si
 		return
 	var vt := (b.vel - n * vn) * (1.0 - params.cushion_tangent_loss)
 	b.vel = n * (-vn * params.cushion_restitution) + vt
+	_apply_cushion_english(b, n, -vn)
+	b.roll_spin *= params.cushion_roll_retention
 	_enter_sliding(b)
 
 	var e := SimEvent.make(SimEvent.Type.BALL_CUSHION, time)
@@ -271,6 +309,20 @@ func _bounce_off_cushion(b: BallState, n: Vector2, time: float, events: Array[Si
 	e.pos_a = b.pos
 	e.vel_a_after = b.vel
 	events.append(e)
+
+
+## The cushion grips the ball's side spin: it turns some of it into sideways speed along the
+## cushion (changing the rebound angle) and loses that much spin. n points at the ball.
+## Only the spin-driven part of the slip is modelled, so balls with no side spin bounce exactly as before.
+func _apply_cushion_english(b: BallState, n: Vector2, approach_speed: float) -> void:
+	if params.cushion_friction <= 0.0 or b.side_spin == 0.0:
+		return
+	var t := Vector2(-n.y, n.x)
+	# Coulomb limit on the tangential impulse (per unit mass), from the normal impulse of this bounce.
+	var j_max = params.cushion_friction * (1.0 + params.cushion_restitution) * approach_speed
+	var j := clampf(b.side_spin / ROLL_SPIN_RATE, -j_max, j_max)
+	b.vel += t * j
+	b.side_spin -= ROLL_SPIN_RATE * j
 
 
 # ------------------------------------------------------------------ cleanup, pockets, rest
@@ -327,7 +379,8 @@ func _check_pockets(state: SimState, events: Array[SimEvent]) -> void:
 			events.append(e)
 			b.status = BallState.Status.POCKETED
 			b.vel = Vector2.ZERO
-			b.slide_remaining = 0.0
+			b.roll_spin = Vector2.ZERO
+			b.side_spin = 0.0
 
 
 func _check_rest(state: SimState, events: Array[SimEvent]) -> void:

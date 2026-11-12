@@ -10,15 +10,19 @@ config_version=5
 
 [application]
 
-config/name="SoloBall"
-run/main_scene="uid://dth1y8eeocd1p"
+config/name="SoloShot"
+run/main_scene="uid://b5trp2ul6rnhx"
 config/features=PackedStringArray("4.7", "Mobile")
-config/icon="res://icon.svg"
+config/icon="uid://cv0gbevk6b1og"
 
 [display]
 
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
+
+[gui]
+
+theme/custom_font="uid://sf38o218adwb"
 
 [physics]
 
@@ -28,3 +32,4 @@ window/stretch/aspect="expand"
 
 rendering_device/driver.windows="d3d12"
 renderer/rendering_method="mobile"
+textures/vram_compression/import_etc2_astc=true

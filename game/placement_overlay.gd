@@ -46,4 +46,4 @@ func _draw() -> void:
 
 	var center := mapper.to_screen(_cue_pos)
 	var radius := mapper.length_to_screen(table.ball_radius) * 1.45
-	draw_arc(center, radius, 0.0, TAU, 40, valid_color if _valid else invalid_color, 2.5, true)
+	draw_arc(center, radius, 0.0, TAU, 40, valid_color if _valid else invalid_color, 4.5, true)

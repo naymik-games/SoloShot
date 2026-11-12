@@ -33,3 +33,14 @@ func on_events(events: Array[SimEvent], state: SimState) -> void:
 ## pocketed balls, cushion contact, ...). Return a verdict.
 func on_shot_ended(state: SimState, report: ShotReport) -> ShotResult:
 	return ShotResult.new()
+
+
+## Called every physics frame while the game is live (aiming, placing, or a shot in flight).
+func tick(delta: float) -> void:
+	pass
+
+func is_time_up() -> bool:
+	return false
+
+func time_up_message() -> String:
+	return "Game over"

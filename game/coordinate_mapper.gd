@@ -4,6 +4,9 @@ extends RefCounted
 ## Assumes the nodes that draw with it sit at (0,0) with no camera.
 ## (Replaces the earlier version: adds fit_to_area() and the table art placement.)
 
+## Screen-space rectangle of the whole table (rails included), updated by fit_to_area().
+var table_rect: Rect2 = Rect2()
+
 var scale: float = 300.0  ## pixels per meter
 var offset: Vector2 = Vector2.ZERO  ## pixel position of table origin (0,0)
 
@@ -35,11 +38,13 @@ func fit_to_area(table: TableDef, area: Rect2) -> void:
 		# Meters -> pixels is anchored to the art's playfield rectangle.
 		scale = k * table.art_playfield_rect.size.x / table.size.x
 		offset = art_origin + table.art_playfield_rect.position * k
+		table_rect = Rect2(art_origin, art_size * k) 
 	else:
 		art_scale = 0.0
 		var total := table.size + Vector2.ONE * table.rail_width * 2.0  # meters, including rails
 		scale = maxf(minf(area.size.x / total.x, area.size.y / total.y), 1.0)
 		offset = area.position + (area.size - table.size * scale) * 0.5
+		table_rect = Rect2(offset - Vector2.ONE * table.rail_width * scale, total * scale)  # <- new
 
 
 ## Older helper, still available for procedural tables: margin pixels on every side of the viewport.

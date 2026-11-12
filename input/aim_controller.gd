@@ -40,7 +40,7 @@ func _ready() -> void:
 ## Call when entering the AIMING phase.
 func begin_aiming(cue_ball_pos: Vector2) -> void:
 	aim.cue_ball_pos = cue_ball_pos
-	
+	aim.spin = Vector2.ZERO  # Spin never carries over to the next shot.
 	aim.power_input = 0.0
 	aim.power = 0.0
 	set_input_enabled(true)
@@ -75,6 +75,14 @@ func set_power_input(value: float) -> void:
 		return
 	aim.power_input = clampf(value, 0.0, 1.0)
 	aim.power = pow(aim.power_input, config.power_curve_exponent)
+	aim_changed.emit()
+
+
+## Spin control input: cue contact point on the ball, unit disc (x right, y top). Doesn't affect the prediction.
+func set_spin_input(value: Vector2) -> void:
+	if not input_enabled:
+		return
+	aim.spin = value.limit_length(1.0)
 	aim_changed.emit()
 
 

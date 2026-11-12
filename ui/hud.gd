@@ -9,6 +9,8 @@ extends Control
 @export var status_left_px: float = 24.0
 @export var status_width_px: float = 400.0
 @export var message_bg: Color = Color(0.0, 0.0, 0.0, 0.6)
+@export_range(0.0, 1.0, 0.01) var message_y_fraction: float = 0.78
+
 
 var _status: Label
 var _message: Label
@@ -20,7 +22,7 @@ func _ready() -> void:
 	# Cover the screen but never swallow touches meant for the aiming controls.
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-
+	
 	# Game stats: bottom-left of the band, up to two lines, vertically centered.
 	_status = _make_label(22)
 	_status.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -45,7 +47,10 @@ func _ready() -> void:
 	style.content_margin_top = 10.0
 	style.content_margin_bottom = 10.0
 	_message_panel.add_theme_stylebox_override("panel", style)
-	_message_panel.set_anchors_preset(Control.PRESET_CENTER)
+	_message_panel.set_anchor(SIDE_LEFT, 0.5)
+	_message_panel.set_anchor(SIDE_RIGHT, 0.5)
+	_message_panel.set_anchor(SIDE_TOP, message_y_fraction)
+	_message_panel.set_anchor(SIDE_BOTTOM, message_y_fraction)
 	_message_panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
 	_message_panel.grow_vertical = Control.GROW_DIRECTION_BOTH
 	_message_panel.modulate.a = 0.0
@@ -55,6 +60,8 @@ func _ready() -> void:
 	_message.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_message_panel.add_child(_message)
 
+	_apply_safe_area()
+	get_viewport().size_changed.connect(_apply_safe_area)
 
 ## Shows a message that fades out, or stays up if `persist` is true (e.g. game over).
 func show_message(text: String, persist: bool = false) -> void:
@@ -90,3 +97,20 @@ func _make_label(font_size: int) -> Label:
 	label.add_theme_color_override("font_outline_color", Color.BLACK)
 	label.add_theme_constant_override("outline_size", 5)
 	return label
+
+
+func _apply_safe_area() -> void:
+	var vp := get_viewport_rect()
+	var safe := SafeArea.get_rect(get_viewport())
+	var inset_l := safe.position.x - vp.position.x
+	var inset_b := vp.end.y - safe.end.y
+
+	_status.offset_left = status_left_px + inset_l
+	_status.offset_right = status_left_px + status_width_px + inset_l
+	_status.offset_top = -bottom_band_px - inset_b
+	_status.offset_bottom = -inset_b
+
+
+
+func _on_home_button_pressed() -> void:
+	get_tree().change_scene_to_file("res://scenes/home.tscn")
