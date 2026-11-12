@@ -7,10 +7,9 @@ extends Node2D
 ##   PlacementFlow - ball-in-hand UI after a scratch or foul
 
 enum Phase { SETUP, AIMING, PLACING, SIMULATING, RESOLVING, GAME_OVER }
-enum ModeType { FREE_PRACTICE, NINE_BALL, TIME_TRIAL }
 
 ## Which rules to play.
-@export var mode_type: ModeType = ModeType.NINE_BALL
+@export var mode_type: ModeCatalog.Type = ModeCatalog.Type.NINE_BALL
 
 @export var table_def: TableDef
 @export var physics_params: PhysicsParams
@@ -67,7 +66,7 @@ var _shot_rng := RandomNumberGenerator.new()
 func _ready() -> void:
 	# Mode picked on the home menu overrides the inspector value.
 	if GameSession.selected_mode >= 0:
-		mode_type = GameSession.selected_mode as ModeType
+		mode_type = GameSession.selected_mode as ModeCatalog.Type
 	assert(table_def != null, "Assign table_def in the inspector.")
 	assert(physics_params != null, "Assign physics_params in the inspector.")
 	if aim_config == null:
@@ -166,7 +165,7 @@ func _build_spin_control() -> void:
 
 
 func _start_game() -> void:
-	mode = _create_mode()
+	mode = ModeCatalog.create(mode_type, layout)
 	mode.setup(state, table_def)
 	_prepare_fresh_rack()
 	balls_layer.sync_from(state, mapper)
@@ -176,18 +175,6 @@ func _start_game() -> void:
 		_begin_cue_placement(start_placement)  # e.g. the break: player places the cue ball
 	else:
 		_set_phase(Phase.AIMING)
-
-
-func _create_mode() -> GameMode:
-	match mode_type:
-		ModeType.NINE_BALL:
-			return NineBallMode.new()
-		ModeType.TIME_TRIAL:
-			return TimeTrialMode.new()
-		_:
-			var free_mode := FreePracticeMode.new()
-			free_mode.layout = layout
-			return free_mode
 
 
 func _refresh_hud_status() -> void:
@@ -348,7 +335,7 @@ func _choose_cue_placement(result: ShotResult) -> CuePlacement:
 ## breaks come out differently, and flag the next shot as the break.
 func _prepare_fresh_rack() -> void:
 	# Free Practice with a custom layout is a drill, not a rack: leave it exact.
-	if mode_type == ModeType.FREE_PRACTICE and layout != null:
+	if mode_type == ModeCatalog.Type.FREE_PRACTICE and layout != null:
 		return
 	_shot_rng.randomize()
 	RackJitter.apply(state, table_def, physics_params, _shot_rng)

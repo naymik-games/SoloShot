@@ -10,20 +10,14 @@ extends Resource
 @export_group("Fine adjust")
 ## Radians of aim change per pixel dragged on the fine strip.
 @export var fine_strip_sensitivity: float = 0.001
-## Degrees per nudge-button tap.
-@export var nudge_step_degrees: float = 0.1
-### Seconds to hold before nudge auto-repeat starts.
-#@export var nudge_repeat_delay: float = 0.35
-### Seconds between auto-repeat steps.
-#@export var nudge_repeat_rate: float = 0.05
+
 
 @export_group("Power")
 ## power = power_input ^ exponent. >1 gives more resolution for soft shots.
 @export var power_curve_exponent: float = 1.6
 ## Fire is disabled below this power (in curved power units).
 @export var min_fire_power: float = 0.02
-## If true, power returns to 0 at the start of each aiming phase.
-@export var reset_power_each_shot: bool = false
+
 
 @export_group("Prediction")
 ## Prediction always runs at full power (ignores the power bar).

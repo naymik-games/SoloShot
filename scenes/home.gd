@@ -9,11 +9,11 @@ extends Node2D
 const BUTTON_SIZE := Vector2(360.0, 72.0)
 const BG_COLOR := Color(0.07, 0.17, 0.12)
 
-## label, subtitle, mode (matches PoolGame.ModeType)
+## label, subtitle, mode (matches ModeCatalog.Type)
 const MODES: Array[Dictionary] = [
-	{"label": "Free Practice", "sub": "Standard rack, no rules, no clock", "mode": PoolGame.ModeType.FREE_PRACTICE},
-	{"label": "9-Ball", "sub": "Pocket in order, fewest shots wins", "mode": PoolGame.ModeType.NINE_BALL},
-	{"label": "Time Trial", "sub": "Clear racks before time runs out", "mode": PoolGame.ModeType.TIME_TRIAL},
+	{"label": "Free Practice", "sub": "Standard rack, no rules, no clock", "mode": ModeCatalog.Type.FREE_PRACTICE},
+	{"label": "9-Ball", "sub": "Pocket in order, fewest shots wins", "mode": ModeCatalog.Type.NINE_BALL},
+	{"label": "Time Trial", "sub": "Clear racks before time runs out", "mode": ModeCatalog.Type.TIME_TRIAL},
 ]
 
 

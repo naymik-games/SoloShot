@@ -1,9 +1,0 @@
-[gd_resource type="Resource" script_class="LayoutDef" format=3 uid="uid://defae47eq4cma"]
-
-[ext_resource type="Script" uid="uid://bof0m4v3hlety" path="res://modes/layout_def.gd" id="1_7fvw5"]
-
-[resource]
-script = ExtResource("1_7fvw5")
-ids = null
-positions = null
-metadata/_custom_type_script = "uid://bof0m4v3hlety"

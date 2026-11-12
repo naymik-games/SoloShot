@@ -12,7 +12,7 @@
 [ext_resource type="Script" uid="uid://bsf7g311syerg" path="res://ui/hud.gd" id="7_tsh5i"]
 [ext_resource type="Script" uid="uid://bjq2it12nog2f" path="res://ui/power_control.gd" id="8_c06dw"]
 [ext_resource type="Script" uid="uid://j1cfi1oskw4j" path="res://ui/fine_aim_control.gd" id="9_wlwqg"]
-[ext_resource type="Script" uid="uid://c7i4oq6upw3my" path="res://game/placement_overlay.gd" id="9_xsq6e"]
+[ext_resource type="Script" uid="uid://c7i4oq6upw3my" path="res://view/placement_overlay.gd" id="9_xsq6e"]
 [ext_resource type="Texture2D" uid="uid://cg7fwibpmsoc3" path="res://art/menuList.png" id="14_xsq6e"]
 
 [node name="pool_game" type="Node2D" unique_id=880535942]
