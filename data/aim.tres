@@ -4,5 +4,4 @@
 
 [resource]
 script = ExtResource("1_p8u5j")
-nudge_step_degrees = 0.05
 power_curve_exponent = 1.9

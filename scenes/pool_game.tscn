@@ -21,8 +21,6 @@ mode_type = 2
 table_def = ExtResource("2_xsq6e")
 physics_params = ExtResource("3_c06dw")
 aim_config = ExtResource("7_ht80v")
-debug_print_shot_report = true
-spin_control_size_px = 80.0
 
 [node name="TableView" type="Node2D" parent="." unique_id=1097856801]
 script = ExtResource("2_ht80v")

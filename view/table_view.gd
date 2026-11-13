@@ -17,7 +17,7 @@ extends Node2D
 ## Draws the REAL collision geometry (cushion lines + pocket capture circles) over the art.
 ## Turn on to check that the art and the physics line up, then turn off.
 @export var show_collision_geometry: bool = false
-
+@export var draw_art_backing: bool = false
 var table: TableDef
 var mapper: CoordinateMapper
 
@@ -43,11 +43,11 @@ func _draw() -> void:
 func _draw_art() -> void:
 	var k := mapper.art_scale
 	var rect := Rect2(mapper.art_origin, table.art_texture.get_size() * k)
-	# Dark backing so the transparent pocket holes in the art read as holes.
-	var backing := StyleBoxFlat.new()
-	backing.bg_color = pocket_color
-	backing.set_corner_radius_all(int(16.0 * k))
-	draw_style_box(backing, rect)
+	if draw_art_backing:
+		var backing := StyleBoxFlat.new()
+		backing.bg_color = pocket_color
+		backing.set_corner_radius_all(int(16.0 * k))
+		draw_style_box(backing, rect)
 	draw_texture_rect(table.art_texture, rect, false)
 
 

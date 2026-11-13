@@ -1,9 +1,9 @@
 [gd_resource type="Resource" script_class="TableDef" format=3 uid="uid://xt3sauvtd4d4"]
 
+[ext_resource type="Texture2D" uid="uid://b1eii8pwcnuct" path="res://art/tables/jedi.png" id="1_apjh0"]
 [ext_resource type="Script" uid="uid://wkiv8bswpywv" path="res://sim/table_def.gd" id="1_tbl"]
-[ext_resource type="Texture2D" uid="uid://be4htvqy7hhkh" path="res://art/singletableLondon-hd.png" id="2_art"]
 
 [resource]
 script = ExtResource("1_tbl")
 ball_radius = 0.039
-art_texture = ExtResource("2_art")
+art_texture = ExtResource("1_apjh0")

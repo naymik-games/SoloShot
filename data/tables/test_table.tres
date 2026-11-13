@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="TableDef" format=3 uid="uid://dkjtclk8qtow2"]
+
+[ext_resource type="Texture2D" uid="uid://4hvvjd07ktyr" path="res://art/tables/maple.png" id="1_t20b1"]
+[ext_resource type="Script" uid="uid://wkiv8bswpywv" path="res://sim/table_def.gd" id="2_cgwq2"]
+
+[resource]
+script = ExtResource("2_cgwq2")
+ball_radius = 0.039
+art_texture = ExtResource("1_t20b1")

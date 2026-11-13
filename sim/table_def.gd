@@ -27,7 +27,7 @@ extends Resource
 @export var art_texture: Texture2D
 ## The playfield (cushion nose to cushion nose) inside the texture, in TEXTURE PIXELS.
 ## Defaults are measured from singletableLondon-hd.png (970 x 538).
-@export var art_playfield_rect: Rect2 = Rect2(50.5, 50.5, 865.0, 433.0)
+var art_playfield_rect = Rect2(74, 74, 866, 433)
 
 ## Built by TableBuilder.build(); not exported.
 var cushions: Array[CushionSegment] = []

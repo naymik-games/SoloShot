@@ -25,7 +25,7 @@ func _ready() -> void:
 	centered = false
 	offset = -tip_px  # Puts the tip pixel on this node's origin.
 	visible = false
-
+	z_index = 1
 
 ## Recompute position / rotation / scale from the current aim. Cheap; call on any aim change
 ## or when the table is rescaled.
