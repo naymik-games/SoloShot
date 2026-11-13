@@ -19,6 +19,29 @@ func status_text() -> String:
 	return ""
 
 
+## How many players take turns. 1 = solo (the default). PoolGame creates that many players.
+func player_count() -> int:
+	return 1
+
+
+## A player's turn is starting (also called once when the game starts, for the first shooter).
+## Modes with per-player state (groups, scores) key it by this index and remember it as the
+## current shooter, so on_shot_ended knows whose shot it was.
+func on_turn_started(player_index: int) -> void:
+	pass
+
+
+## For the player panels: the name of a player's group ("Solids", "Stripes", ...), or "" when
+## they have none (yet) or the mode has no groups.
+func player_group_name(player_index: int) -> String:
+	return ""
+
+
+## For the player panels: ids of the balls in a player's group, or empty when they have none.
+func player_group_balls(player_index: int) -> Array[int]:
+	return []
+
+
 func on_shot_taken(shot: Shot) -> void:
 	pass
 

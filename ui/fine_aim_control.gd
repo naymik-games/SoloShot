@@ -6,7 +6,7 @@ extends Control
 
 signal nudge(delta_radians: float)
 
-const STRIP_SIZE: Vector2 = Vector2(30, 400)
+const STRIP_SIZE: Vector2 = Vector2(30, 300)
 const TICK_SPACING: float = 16.0
 
 @export var config: AimConfig

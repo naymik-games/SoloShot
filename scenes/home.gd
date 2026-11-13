@@ -14,6 +14,7 @@ const MODES: Array[Dictionary] = [
 	{"label": "Free Practice", "sub": "Standard rack, no rules, no clock", "mode": ModeCatalog.Type.FREE_PRACTICE},
 	{"label": "9-Ball", "sub": "Pocket in order, fewest shots wins", "mode": ModeCatalog.Type.NINE_BALL},
 	{"label": "Time Trial", "sub": "Clear racks before time runs out", "mode": ModeCatalog.Type.TIME_TRIAL},
+	{"label": "8-Ball (2 players)", "sub": "Pass and play, standard rules", "mode": ModeCatalog.Type.EIGHT_BALL},
 ]
 
 

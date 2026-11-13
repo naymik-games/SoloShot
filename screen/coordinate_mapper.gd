@@ -34,7 +34,9 @@ func fit_to_area(table: TableDef, area: Rect2) -> void:
 		var art_size := table.art_texture.get_size()
 		var k := maxf(minf(area.size.x / art_size.x, area.size.y / art_size.y), 0.01)
 		art_scale = k
-		art_origin = area.position + (area.size - art_size * k) * 0.5
+		art_origin = Vector2(
+	area.position.x + (area.size.x - art_size.x * k) * 0.5,
+	area.end.y - art_size.y * k)  # bottom-aligned
 		# Meters -> pixels is anchored to the art's playfield rectangle.
 		scale = k * table.art_playfield_rect.size.x / table.size.x
 		offset = art_origin + table.art_playfield_rect.position * k

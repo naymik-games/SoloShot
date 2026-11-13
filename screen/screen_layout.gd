@@ -6,21 +6,37 @@ extends Resource
 ## create one there ("New ScreenLayout") to tune the values.
 
 @export_group("Table (fractions of the screen kept clear around the table)")
-## The table is scaled to fit inside the screen minus these insets.
-## Power bar sits in the left margin, fine-aim strip in the right margin,
-## tray in the top band, Place button / messages in the bottom band.
 @export_range(0.0, 0.4, 0.005) var table_inset_left: float = 0.065
 @export_range(0.0, 0.4, 0.005) var table_inset_right: float = 0.065
-@export_range(0.0, 0.4, 0.005) var table_inset_top: float = 0.085
-@export_range(0.0, 0.4, 0.005) var table_inset_bottom: float = 0.10
+## Pixels between the bottom of the table art and the bottom of the screen.
+@export var table_bottom_margin_px: float = 25.0
+## Height the table may use, as a fraction of screen height. 0.815 is what the old
+## top/bottom insets gave, so the table keeps its current size. Everything above it
+## becomes the top band.
+@export_range(0.3, 1.0, 0.005) var table_height_fraction: float = 0.815
 ## Pixels kept free between the pocketed-ball tray and the top of the table area.
+@export_group("Pocketed tray")
+## Width of the vertical tray column, at the right edge of the safe area.
+@export var tray_width_px: float = 40.0
+## Distance from the top and the right edge of the safe area.
+@export var tray_margin_px: float = 10.0
+@export var tray_margin_top_px: float = 60.0
+## Pixels kept free between the bottom of the tray and the spin control.
 @export var tray_gap_px: float = 6.0
+
+@export_group("Player panels")
+## Space kept above and below the player section, inside the band above the table.
+@export var player_panel_margin_px: float = 8.0
+## The section is as tall as the band allows, up to this.
+@export var player_panel_max_height_px: float = 72.0
+## Width of the whole player section (both panels) as a fraction of the table area's width.
+@export_range(0.3, 1.0, 0.01) var player_panel_width_fraction: float = 0.72
 
 @export_group("Side controls")
 ## Gap between the table and the power / fine-aim controls.
-@export var side_control_gap_px: float = 12.0
+@export var side_control_gap_px: float = 24.0
 ## Control height as a fraction of the table's height (0 = keep the control's own size).
-@export_range(0.0, 1.0, 0.05) var side_control_height_fraction: float = 0.8
+@export_range(0.0, 1.0, 0.05) var side_control_height_fraction: float = 0.0
 
 @export_group("Spin control")
 ## Diameter of the cue-ball spin control, drawn in the bottom-right corner (inside the safe area).
@@ -36,16 +52,32 @@ var _home_base: Vector4 = Vector4.ZERO  # left, top, right, bottom offsets from 
 ## The part of the screen reserved for the table (everything except the UI insets).
 func table_area(viewport_size: Vector2) -> Rect2:
 	var left := viewport_size.x * table_inset_left
-	var top := viewport_size.y * table_inset_top
-	return Rect2(left, top,
-		viewport_size.x - left - viewport_size.x * table_inset_right,
-		viewport_size.y - top - viewport_size.y * table_inset_bottom)
-
+	var height := viewport_size.y * table_height_fraction
+	var bottom := viewport_size.y - table_bottom_margin_px
+	return Rect2(left, maxf(bottom - height, 0.0),
+		viewport_size.x - left - viewport_size.x * table_inset_right, height)
 
 ## The band above the table, used by the pocketed-ball tray.
-func tray_strip(viewport_size: Vector2) -> Rect2:
-	var area := table_area(viewport_size)
-	return Rect2(area.position.x, 0.0, area.size.x, maxf(area.position.y - tray_gap_px, 0.0))
+## Right-edge column for the pocketed-ball tray, ending just above the spin control.
+## Pass the safe rect (SafeArea.get_rect(viewport)) so it respects notches and the home bar.
+func tray_strip(viewport_size: Vector2, safe_rect: Rect2 = Rect2()) -> Rect2:
+	var safe := safe_rect if safe_rect.size.x > 0.0 else Rect2(Vector2.ZERO, viewport_size)
+	var x := safe.end.x - tray_margin_px - tray_width_px
+	var top := safe.position.y + tray_margin_top_px
+	var bottom := safe.end.y - spin_control_margin_px - spin_control_size_px - tray_gap_px
+	return Rect2(x, top, tray_width_px, maxf(bottom - top, 0.0))
+
+## The player section: centered over the table, in the band above it. Pass the safe rect
+## (SafeArea.get_rect(viewport)) so it respects notches.
+func player_strip(viewport_size: Vector2, safe_rect: Rect2 = Rect2()) -> Rect2:
+	var safe := safe_rect if safe_rect.size.x > 0.0 else Rect2(Vector2.ZERO, viewport_size)
+	var table := table_area(viewport_size)
+	var top := safe.position.y + player_panel_margin_px
+	var bottom := table.position.y - player_panel_margin_px
+	var available := maxf(bottom - top, 0.0)
+	var h := minf(available, player_panel_max_height_px)
+	var w := table.size.x * player_panel_width_fraction
+	return Rect2(table.get_center().x - w * 0.5, top + (available - h) * 0.5, w, h)
 
 
 ## Power control goes just left of the table, fine-aim strip just right of it.

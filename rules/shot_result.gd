@@ -1,6 +1,12 @@
 class_name ShotResult
 extends RefCounted
 
+enum Turn { CONTINUE, SWITCH }
+
+## Who shoots next. CONTINUE = the same player again (default, and all a solo mode ever needs).
+## SWITCH = pass to the next player. `cue_placement` below applies to whoever shoots next.
+var turn: Turn = Turn.CONTINUE
+
 var score_delta: int = 0
 var foul: bool = false
 ## Which fouls occurred (ShotReport.Foul values). `foul` should be true whenever this is non-empty.

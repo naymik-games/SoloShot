@@ -7,6 +7,7 @@
 [ext_resource type="Resource" uid="uid://cp724b546tdid" path="res://data/physics/default_physics.tres" id="3_c06dw"]
 [ext_resource type="Script" uid="uid://cw1gmatidjcxe" path="res://view/aim_overlay.gd" id="4_c4lu1"]
 [ext_resource type="Script" uid="uid://bgkrkybi0egwj" path="res://view/debug_overlay.gd" id="5_m1fu7"]
+[ext_resource type="Texture2D" uid="uid://c54sqmo6e4ggv" path="res://art/tile_bg.png" id="5_tsh5i"]
 [ext_resource type="Script" uid="uid://dlqb7c2rnfr3b" path="res://input/aim_controller.gd" id="6_xsq6e"]
 [ext_resource type="Resource" uid="uid://cnlp7q3p8ym0f" path="res://data/aim.tres" id="7_ht80v"]
 [ext_resource type="Script" uid="uid://bsf7g311syerg" path="res://ui/hud.gd" id="7_tsh5i"]
@@ -21,6 +22,15 @@ mode_type = 2
 table_def = ExtResource("2_xsq6e")
 physics_params = ExtResource("3_c06dw")
 aim_config = ExtResource("7_ht80v")
+
+[node name="TextureRect" type="TextureRect" parent="." unique_id=745439995]
+custom_minimum_size = Vector2(1152, 648)
+offset_right = 1152.0
+offset_bottom = 648.0
+size_flags_horizontal = 3
+size_flags_vertical = 3
+texture = ExtResource("5_tsh5i")
+stretch_mode = 1
 
 [node name="TableView" type="Node2D" parent="." unique_id=1097856801]
 script = ExtResource("2_ht80v")
@@ -54,24 +64,26 @@ script = ExtResource("7_tsh5i")
 
 [node name="FinAimControl" type="Control" parent="UI/HUD" unique_id=184050861]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(30, 400)
+custom_minimum_size = Vector2(30, 300)
 anchors_preset = 0
 offset_left = 1090.0
 offset_top = 130.0
 offset_right = 1120.0
-offset_bottom = 530.0
+offset_bottom = 430.0
 script = ExtResource("9_wlwqg")
 strip_color = Color(0.2673044, 0.26730418, 0.2673042, 0.6)
 
 [node name="PowerControl" type="Control" parent="UI/HUD" unique_id=2134219488]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(40, 400)
+custom_minimum_size = Vector2(40, 380)
 anchors_preset = 0
 offset_left = 27.0
 offset_top = 116.0
 offset_right = 67.0
-offset_bottom = 516.0
+offset_bottom = 416.0
 script = ExtResource("8_c06dw")
+track_width = 32.0
+knob_color = Color(0.87292266, 0.87255514, 0.81242496, 1)
 
 [node name="home_button" type="TextureButton" parent="UI/HUD" unique_id=2126450666]
 unique_name_in_owner = true

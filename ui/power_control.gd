@@ -188,7 +188,7 @@ func _fade(c: Color, a: float) -> Color:
 func _panel(rect: Rect2, color: Color, radius: float,
 		border: Color = Color(0, 0, 0, 0), border_w: int = 0) -> void:
 	_box.bg_color = color
-	_box.set_corner_radius_all(int(radius))
+	#_box.set_corner_radius_all(int(radius))
 	_box.border_color = border
 	_box.set_border_width_all(border_w)
 	draw_style_box(_box, rect)

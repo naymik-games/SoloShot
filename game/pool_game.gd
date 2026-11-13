@@ -5,6 +5,8 @@ extends Node2D
 ##   ScreenLayout  - where the table, controls, tray and spin control sit on screen
 ##   ShotRunner    - fixed-timestep simulation of one shot (+ its ShotReport)
 ##   PlacementFlow - ball-in-hand UI after a scratch or foul
+##   TurnManager   - whose turn it is; each Player has a PlayerController (human now, AI later)
+##   PlayersPanel  - avatar, name, group and pocketed balls per player (multi-player modes only)
 
 enum Phase { SETUP, AIMING, PLACING, SIMULATING, RESOLVING, GAME_OVER }
 
@@ -48,6 +50,12 @@ var pocketed_log: PocketedLog
 var tray: PocketedTray
 var placement_flow: PlacementFlow
 var spin_control: SpinControl
+## Who is playing. One human for the solo modes; the mode says how many players take turns.
+var turns: TurnManager
+## Shared by every human player (pass-and-play uses the same on-screen controls).
+var human_controller: HumanController
+## Player section above the table. Only exists when the mode has more than one player.
+var players_panel: PlayersPanel
 ## Number of shots taken so far (the shot being played counts).
 var shots_taken: int = 0
 
@@ -120,7 +128,6 @@ func _wire_aim_input() -> void:
 	aim_controller.world_node = self
 	fine_aim.config = aim_config
 
-	aim_controller.shot_requested.connect(_on_shot_requested)
 	aim_controller.aim_changed.connect(_on_aim_changed)
 	aim_controller.input_enabled_changed.connect(func(_e: bool) -> void: _sync_ui())
 	power_control.power_changed.connect(aim_controller.set_power_input)
@@ -153,7 +160,6 @@ func _build_placement() -> void:
 	placement_flow = PlacementFlow.new()
 	placement_flow.setup(self, _ui_root, mapper, table_def, balls_layer)
 	placement_flow.moved.connect(_on_placement_moved)
-	placement_flow.confirmed.connect(_on_placement_confirmed)
 
 
 ## Spin control (cue ball face: tap/drag where the cue strikes).
@@ -166,7 +172,11 @@ func _build_spin_control() -> void:
 
 func _start_game() -> void:
 	mode = ModeCatalog.create(mode_type, layout)
+	_build_players(mode.player_count())
+	_build_players_panel()
 	mode.setup(state, table_def)
+	mode.on_turn_started(turns.current_index)
+	_refresh_players_panel()
 	_prepare_fresh_rack()
 	balls_layer.sync_from(state, mapper)
 	_refresh_hud_status()
@@ -177,9 +187,74 @@ func _start_game() -> void:
 		_set_phase(Phase.AIMING)
 
 
+# ---------------------------------------------------------------- players and turns
+
+## One Player per seat the mode asks for. All seats are human for now; a computer opponent will
+## just be a Player with a different controller.
+func _build_players(count: int) -> void:
+	human_controller = HumanController.new(aim_controller, placement_flow)
+	_register_controller(human_controller)
+	var players: Array[Player] = []
+	for i in maxi(count, 1):
+		players.append(Player.new(i, "Player %d" % (i + 1), human_controller))
+	turns = TurnManager.new()
+	turns.setup(players)
+
+
+## Listen to a controller's decisions. Safe to call twice for the same controller.
+func _register_controller(controller: PlayerController) -> void:
+	if not controller.shot_decided.is_connected(_on_shot_decided):
+		controller.shot_decided.connect(_on_shot_decided)
+	if not controller.placement_confirmed.is_connected(_on_placement_confirmed):
+		controller.placement_confirmed.connect(_on_placement_confirmed)
+
+
+## After the mode has ruled on a shot: pass the turn if it says so.
+func _advance_turn(result: ShotResult) -> void:
+	if result == null or result.turn != ShotResult.Turn.SWITCH:
+		return
+	turns.advance()
+	mode.on_turn_started(turns.current_index)
+	_refresh_hud_status()
+	_refresh_players_panel()
+
+
+func _current_player_uses_touch() -> bool:
+	return turns == null or turns.current().controller.uses_touch_controls()
+
+
 func _refresh_hud_status() -> void:
 	if hud != null:
 		hud.set_status(mode.status_text())
+
+
+## The player section: only for modes with more than one player.
+func _build_players_panel() -> void:
+	if turns.count() < 2 or players_panel != null:
+		return
+	players_panel = PlayersPanel.new()
+	players_panel.setup(pocketed_log, state, table_def.ball_radius, mapper)
+	add_child(players_panel)
+	players_panel.layout(_players_strip(get_viewport_rect().size))
+	pocketed_log.changed.connect(_refresh_players_panel)
+
+
+func _players_strip(viewport_size: Vector2) -> Rect2:
+	return screen_layout.player_strip(viewport_size, SafeArea.get_rect(get_viewport()))
+
+
+## Push the current names, groups and whose turn it is to the panel.
+func _refresh_players_panel() -> void:
+	if players_panel == null:
+		return
+	var seats: Array = []
+	for p in turns.players:
+		var seat := PlayersPanel.Seat.new()
+		seat.display_name = p.display_name
+		seat.group_name = mode.player_group_name(p.index)
+		seat.group_balls = mode.player_group_balls(p.index)
+		seats.append(seat)
+	players_panel.refresh(seats, turns.current_index)
 
 
 # ---------------------------------------------------------------- frame loop
@@ -217,13 +292,13 @@ func _run_simulation(delta: float) -> void:
 		_set_phase(Phase.RESOLVING)
 
 
-func _on_shot_requested(shot: Shot) -> void:
+func _on_shot_decided(shot: Shot, spin: Vector2) -> void:
 	if phase != Phase.AIMING:
 		return
 	mode.on_shot_taken(shot)
 	_refresh_hud_status()
 	_shot_rng.randomize()
-	var cue_offset := aim_controller.aim.spin * physics_params.max_cue_offset
+	var cue_offset := spin * physics_params.max_cue_offset
 	simulator.apply_shot(state, shot, _is_break_shot, _shot_rng, cue_offset)
 	_is_break_shot = false
 	runner.begin()
@@ -236,7 +311,7 @@ func _on_shot_requested(shot: Shot) -> void:
 func _set_phase(new_phase: Phase) -> void:
 	phase = new_phase
 	var placing := new_phase == Phase.PLACING
-	_set_aim_controls_visible(not placing)
+	_set_aim_controls_visible(not placing and _current_player_uses_touch())
 	if not placing:
 		placement_flow.set_active(false)
 	match phase:
@@ -244,7 +319,7 @@ func _set_phase(new_phase: Phase) -> void:
 			_enter_aiming()
 		Phase.PLACING:
 			_enter_idle()
-			placement_flow.begin(state, _cue_placement)
+			turns.current().controller.begin_placement(state, _cue_placement)
 		Phase.RESOLVING:
 			_resolve_shot()
 		_:  # SETUP, SIMULATING, GAME_OVER
@@ -254,20 +329,24 @@ func _set_phase(new_phase: Phase) -> void:
 ## No aiming: input off, overlay and cue stick hidden.
 func _enter_idle() -> void:
 	aim_controller.set_input_enabled(false)
+	if turns != null:
+		turns.current().controller.cancel()  # Also stops a computer player that is still thinking.
 	aim_overlay.clear()
 	cue_stick.visible = false
 
 
 func _enter_aiming() -> void:
 	var cue := state.get_cue_ball()
-	if cue != null and cue.is_on_table():
-		aim_controller.begin_aiming(cue.pos)
+	if cue == null or not cue.is_on_table():
+		push_warning("AIMING phase with no cue ball on the table.")
+		_enter_idle()
+		return
+	var controller := turns.current().controller
+	controller.begin_shot(state)
+	if controller.uses_touch_controls():
 		_prediction_dirty = true
 		cue_stick.refresh()
 		cue_stick.visible = true
-	else:
-		push_warning("AIMING phase with no cue ball on the table.")
-		_enter_idle()
 
 
 ## Aiming controls are hidden while the player is placing the cue ball.
@@ -288,6 +367,7 @@ func _resolve_shot() -> void:
 		_set_phase(Phase.GAME_OVER)
 		return
 
+	_advance_turn(result)
 	var next_placement := _choose_cue_placement(result)
 	if next_placement != null and next_placement.mode != CuePlacement.Mode.NONE:
 		_begin_cue_placement(next_placement)
@@ -311,6 +391,7 @@ func _apply_result(result: ShotResult) -> void:
 		_prepare_fresh_rack()
 	balls_layer.sync_from(state, mapper)
 	tray.refresh()  # The mode may have respotted or reracked balls.
+	_refresh_players_panel()  # Groups may have just been assigned.
 
 
 ## What the mode asked for, plus the safety nets: a pocketed cue ball is never left off the
@@ -364,6 +445,8 @@ func _on_placement_moved() -> void:
 
 
 func _on_placement_confirmed() -> void:
+	if phase != Phase.PLACING:
+		return
 	_set_phase(Phase.AIMING)
 
 
@@ -410,5 +493,7 @@ func _on_viewport_resized() -> void:
 		cue_stick.refresh()
 	if tray != null:
 		tray.layout(screen_layout.tray_strip(viewport_size))
+	if players_panel != null:
+		players_panel.layout(_players_strip(viewport_size))
 	if placement_flow != null:
 		placement_flow.redraw()

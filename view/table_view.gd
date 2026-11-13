@@ -31,7 +31,7 @@ func setup(p_table: TableDef, p_mapper: CoordinateMapper) -> void:
 func _draw() -> void:
 	if table == null or mapper == null:
 		return
-	draw_rect(Rect2(Vector2.ZERO, get_viewport_rect().size), background_color)
+	#draw_rect(Rect2(Vector2.ZERO, get_viewport_rect().size), background_color)
 	if table.art_texture != null and mapper.art_scale > 0.0:
 		_draw_art()
 	else:

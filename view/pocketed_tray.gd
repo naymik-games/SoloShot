@@ -40,7 +40,8 @@ func layout(strip: Rect2) -> void:
 
 ## Rebuild the row from the log and the current ball states.
 func refresh() -> void:
-	if _log == null or _state == null or _mapper == null or _strip.size.x <= 0.0:
+	if _log == null or _state == null or _mapper == null \
+			or _strip.size.x <= 0.0 or _strip.size.y <= 0.0:
 		return
 
 	var ids := _log.visible_ids(_state)
@@ -57,28 +58,32 @@ func refresh() -> void:
 		queue_redraw()
 		return
 
-	var r := minf(_mapper.length_to_screen(_ball_radius_m) * ball_scale, _strip.size.y * 0.4)
+	# Ball size is capped so the backing panel (ball + padding) fits the column width.
+	var r := minf(_mapper.length_to_screen(_ball_radius_m) * ball_scale,
+			_strip.size.x / (2.0 * (1.0 + panel_padding_radii)))
 	r = maxf(r, 1.0)
+	var pad := r * panel_padding_radii
 	var step := r * spacing_radii
-	var max_width := _strip.size.x * 0.95
-	if n > 1 and step * (n - 1) + 2.0 * r > max_width:
-		step = (max_width - 2.0 * r) / float(n - 1)  # Squeeze (overlap) rather than overflow.
+	var max_height := _strip.size.y
+	if n > 1 and step * (n - 1) + 2.0 * (r + pad) > max_height:
+		step = (max_height - 2.0 * (r + pad)) / float(n - 1)  # Squeeze (overlap) rather than overflow.
+		step = maxf(step, 0.0)
 
 	var total := step * (n - 1)
-	var center := _strip.get_center()
+	var cx := _strip.get_center().x
+	var top := _strip.position.y
 	for i in n:
 		var id := ids[i]
 		var view: BallView = _views.get(id)
 		if view == null:
 			view = _create_view(id)
-		view.show_static(Vector2(center.x - total * 0.5 + i * step, center.y), r)
+		view.show_static(Vector2(cx, top + r + pad + i * step), r)
 
-	var pad := r * panel_padding_radii
 	_panel_rect = Rect2(
-		center.x - total * 0.5 - r - pad,
-		center.y - r - pad,
-		total + 2.0 * r + 2.0 * pad,
-		2.0 * (r + pad))
+		cx - r - pad,
+		top,
+		2.0 * (r + pad),
+		total + 2.0 * (r + pad))
 	_panel_corner = r + pad
 	queue_redraw()
 
