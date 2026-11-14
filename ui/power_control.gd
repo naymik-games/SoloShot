@@ -7,7 +7,9 @@ extends Control
 ##   - Drag back up into the dead zone at the top and release -> value is 0, so the owner cancels.
 ##     You can also grab the handle again without letting go of the idea: nothing was fired.
 ##
-## Only the handle can be grabbed, so tapping the track can never fire a shot by accident.
+## Grabbing is forgiving: while the handle rests at the top, a press on it, on the "pull down"
+## arrows below it, or just beside/above the control all pick it up. The handle never jumps on
+## grab, so a plain tap changes nothing and can never fire a shot by accident.
 ## Give the node a tall, narrow custom_minimum_size (e.g. 80 x 420) and keep mouse_filter = Stop.
 
 ## Emitted while dragging whenever the power changes (0..1). Not emitted by set_value().
@@ -19,7 +21,15 @@ signal released
 ## Fraction of the travel, measured from the top, that snaps to zero power ("cancel zone").
 @export_range(0.0, 0.2, 0.005) var dead_zone: float = 0.04
 ## Extra pixels around the handle that still grab it (fingers are imprecise).
-@export var grab_margin: float = 14.0
+@export var grab_margin: float = 28.0
+## While the handle rests at the top, presses this many pixels below it also grab it. Covers the
+## "pull down" arrows, which is where a thumb naturally lands.
+@export var rest_grab_extra: float = 90.0
+## The control reacts to presses this far outside its rectangle (top and both sides), so a thumb
+## that lands a little beside or above the bar still pulls it instead of aiming on the table.
+## Works without changing layout; the drawing is untouched.
+@export var hit_pad_top: float = 24.0
+@export var hit_pad_side: float = 24.0
 ## How quickly the handle eases to values set from outside (higher = snappier).
 @export var ease_speed: float = 18.0
 
@@ -42,7 +52,9 @@ var enabled: bool = true:
 
 var _shown: float = 0.0  ## What is drawn; eases toward `value` unless the player is dragging.
 var _dragging: bool = false
+var _pressed_here: bool = false  ## A press started on this control and has not been released yet.
 var _grab_offset: float = 0.0
+var _grab_at_rest: bool = false  ## The handle was resting at the top when it was grabbed.
 var _box: StyleBoxFlat = StyleBoxFlat.new()
 
 
@@ -60,6 +72,13 @@ func set_value(v: float) -> void:
 	set_process(true)
 
 
+func _notification(what: int) -> void:
+	# Hidden mid-gesture means the release never arrives; don't stay pressed.
+	if what == NOTIFICATION_VISIBILITY_CHANGED and not is_visible_in_tree():
+		_dragging = false
+		_pressed_here = false
+
+
 func set_enabled(v: bool) -> void:
 	enabled = v
 	if not v:
@@ -69,29 +88,60 @@ func set_enabled(v: bool) -> void:
 
 # ---------------------------------------------------------------- input
 
+## Let presses land slightly outside the rectangle (see hit_pad_*). Only the top and sides grow;
+## the bottom stays put so the bar never steals touches from whatever sits below it.
+func _has_point(point: Vector2) -> bool:
+	return Rect2(-hit_pad_side, -hit_pad_top, size.x + 2.0 * hit_pad_side,
+			size.y + hit_pad_top).has_point(point)
+
+
 func _gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		# Always swallow left clicks over the bar so they can't start an aim drag on the table.
 		accept_event()
-		if not enabled:
-			return
 		if event.pressed:
-			if _knob_rect(_shown).grow(grab_margin).has_point(event.position):
+			_pressed_here = true
+			if enabled and _grab_zone().has_point(event.position):
+				_grab_at_rest = _shown <= 0.001
 				_dragging = true
 				value = _shown
 				_grab_offset = event.position.y - _knob_center_y(_shown)
 				queue_redraw()
-		elif _dragging:
-			_dragging = false
-			queue_redraw()
-			released.emit()
-	elif event is InputEventMouseMotion and _dragging:
-		_set_from_knob_center(event.position.y - _grab_offset)
+		else:
+			_pressed_here = false
+			if _dragging:
+				_dragging = false
+				queue_redraw()
+				released.emit()
+	elif event is InputEventMouseMotion and _pressed_here:
+		# Swallow the whole gesture, even when the press missed the handle. Otherwise the motion
+		# of a missed pull falls through to the table and rotates the aim.
 		accept_event()
+		if _dragging:
+			_set_from_finger(event.position.y)
 
 
-func _set_from_knob_center(center_y: float) -> void:
-	var raw := clampf((center_y - knob_height * 0.5) / _travel(), 0.0, 1.0)
+## Where a press may pick the handle up. Around the handle always; while it rests at the top,
+## also the arrows below it and the padded strip above/beside it.
+func _grab_zone() -> Rect2:
+	var kr := _knob_rect(_shown)
+	var side := maxf(grab_margin, hit_pad_side)
+	var zone := kr.grow_individual(side, grab_margin, side, grab_margin)
+	if _shown <= 0.001:
+		zone = zone.merge(Rect2(-hit_pad_side, -hit_pad_top, size.x + 2.0 * hit_pad_side,
+				kr.end.y + rest_grab_extra + hit_pad_top))
+	return zone
+
+
+## Maps the finger's y to power. The handle never jumps on grab (power is the same as before the
+## press), and when it was grabbed at rest the grab offset "melts" as you pull so that the finger
+## and the handle line up at the bottom: full power stays reachable even if you grabbed the
+## arrows well below the handle. Moving the finger back above the press point gives zero.
+func _set_from_finger(finger_y: float) -> void:
+	var span := _travel()
+	if _grab_at_rest:
+		span = maxf(span - _grab_offset, 1.0)
+	var raw := clampf((finger_y - knob_height * 0.5 - _grab_offset) / span, 0.0, 1.0)
 	var v := 0.0 if raw <= dead_zone else raw  # Inside the dead zone the handle snaps to the top.
 	if is_equal_approx(v, value):
 		return

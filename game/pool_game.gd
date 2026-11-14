@@ -22,6 +22,11 @@ enum Phase { SETUP, AIMING, PLACING, SIMULATING, RESOLVING, GAME_OVER }
 @export var layout: LayoutDef
 ## Prints a one-line summary of each shot (first contact, pockets, cushion contact) to the output panel.
 @export var debug_print_shot_report: bool = false
+## Seat 2 is played by the computer (two-player modes only). The home menu can override this
+## with GameSession.computer_opponent.
+@export var computer_opponent: bool = false
+## Computer opponent tuning. Empty = defaults.
+@export var ai_config: AiConfig
 
 # Typed so GDScript can check member access (shot_requested, mapper, etc.).
 @onready var table_view: TableView = $TableView
@@ -75,6 +80,10 @@ func _ready() -> void:
 	# Mode picked on the home menu overrides the inspector value.
 	if GameSession.selected_mode >= 0:
 		mode_type = GameSession.selected_mode as ModeCatalog.Type
+	if GameSession.computer_opponent >= 0:
+		computer_opponent = GameSession.computer_opponent == 1
+	if ai_config == null:
+		ai_config = AiConfig.new()
 	assert(table_def != null, "Assign table_def in the inspector.")
 	assert(physics_params != null, "Assign physics_params in the inspector.")
 	if aim_config == null:
@@ -189,14 +198,22 @@ func _start_game() -> void:
 
 # ---------------------------------------------------------------- players and turns
 
-## One Player per seat the mode asks for. All seats are human for now; a computer opponent will
-## just be a Player with a different controller.
+## One Player per seat the mode asks for. Seat 2 is the computer when computer_opponent is on;
+## every other seat is a human sharing the on-screen controls.
 func _build_players(count: int) -> void:
 	human_controller = HumanController.new(aim_controller, placement_flow)
 	_register_controller(human_controller)
 	var players: Array[Player] = []
+	var names: Array[String] = []
 	for i in maxi(count, 1):
-		players.append(Player.new(i, "Player %d" % (i + 1), human_controller))
+		if computer_opponent and i == 1:
+			var ai := AiController.new(i, mode, table_def, physics_params, ai_config)
+			_register_controller(ai)
+			players.append(Player.new(i, "Computer", ai))
+		else:
+			players.append(Player.new(i, "Player %d" % (i + 1), human_controller))
+		names.append(players[i].display_name)
+	mode.set_player_names(names)
 	turns = TurnManager.new()
 	turns.setup(players)
 
@@ -275,7 +292,8 @@ func _physics_process(delta: float) -> void:
 		Phase.AIMING:
 			if _prediction_dirty:
 				_prediction_dirty = false
-				_update_prediction()
+				if _current_player_uses_touch():  # No aim line during the computer's turn.
+					_update_prediction()
 
 
 func _run_simulation(delta: float) -> void:
@@ -447,6 +465,8 @@ func _on_placement_moved() -> void:
 func _on_placement_confirmed() -> void:
 	if phase != Phase.PLACING:
 		return
+	# A computer player moves the cue ball in `state` without the drag controller telling the view.
+	balls_layer.sync_from(state, mapper)
 	_set_phase(Phase.AIMING)
 
 

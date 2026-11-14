@@ -33,6 +33,8 @@ var _current: int = 0
 var _groups: Array[int] = [0, 0]
 ## True until the break has been played (again after a re-rack).
 var _break_pending: bool = true
+## Display names of the players (set by PoolGame; falls back to "Player N").
+var _player_names: Array[String] = []
 
 # Captured in on_shot_taken, before the shot changes the table.
 var _shooter: int = 0
@@ -63,6 +65,29 @@ func player_count() -> int:
 
 func on_turn_started(player_index: int) -> void:
 	_current = player_index
+
+
+func set_player_names(names: Array[String]) -> void:
+	_player_names = names
+
+
+func is_break_shot() -> bool:
+	return _break_pending
+
+
+## What a player may hit first right now (empty = anything, i.e. the break).
+func legal_first_balls(player_index: int) -> Array[int]:
+	var ids: Array[int] = []
+	if _break_pending:
+		return ids
+	var group := _groups[player_index]
+	if group == Group.NONE:
+		return _object_balls_on_table(false)
+	var own := _balls_of_group_on_table(group)
+	if own.is_empty():
+		ids.append(EIGHT)
+		return ids
+	return own
 
 
 ## Groups and pocketed balls are on the player panels; this only says what the panels can't.
@@ -206,6 +231,8 @@ func _other(player: int) -> int:
 
 
 func _name(player: int) -> String:
+	if player >= 0 and player < _player_names.size():
+		return _player_names[player]
 	return "Player %d" % (player + 1)
 
 

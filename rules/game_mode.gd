@@ -42,6 +42,24 @@ func player_group_balls(player_index: int) -> Array[int]:
 	return []
 
 
+## For computer players: ids of the balls the next shot may legally hit first.
+## Empty = any ball is legal (the break, or a mode without such a rule).
+func legal_first_balls(_player_index: int) -> Array[int]:
+	var none: Array[int] = []
+	return none
+
+
+## For computer players: true while the next shot is the break.
+func is_break_shot() -> bool:
+	return false
+
+
+## The players' display names, so messages ("... wins", "... ball in hand") match the panels.
+## Called once, before setup(). Modes that don't print player names ignore it.
+func set_player_names(_names: Array[String]) -> void:
+	pass
+
+
 func on_shot_taken(shot: Shot) -> void:
 	pass
 
