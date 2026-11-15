@@ -39,7 +39,7 @@ func _draw() -> void:
 	var scratch := p.outcome == PredictionResult.Outcome.POCKETS_CUE
 
 	# 1. Aim line (cue ball path).
-	if config.show_aim_line and p.cue_path.size() >= 2:
+	if config.show_aim_line and Settings.show_aim_guide and p.cue_path.size() >= 2:
 		var pts := PackedVector2Array()
 		for m in p.cue_path:
 			pts.append(mapper.to_screen(m))
@@ -51,13 +51,16 @@ func _draw() -> void:
 	var r_px := mapper.length_to_screen(ball_radius)
 
 	# 2. Ghost ball at the contact position.
-	if config.show_ghost_ball:
+	if config.show_ghost_ball and Settings.show_aim_guide:
 		var c := mapper.to_screen(p.ghost_pos)
 		draw_circle(c, r_px, ghost_fill_color)
 		draw_arc(c, r_px, 0.0, TAU, 48, ghost_outline_color, line_width, true)
 
-	# 3. Short object-ball line, starting at the ball's edge.
-	if config.show_object_line and p.object_dir != Vector2.ZERO:
+	# 3. Short object-ball line, starting at the ball's edge
+		#print("object line: stop=", Settings.object_line_stop, " show=", config.show_object_line,
+			#" len=", config.object_line_length, " dir=", p.object_dir)
+	if config.show_object_line and Settings.object_line_stop > 0 and p.object_dir != Vector2.ZERO:
+		var length := config.object_line_length * Settings.object_line_scale()
 		var a := p.object_start + p.object_dir * ball_radius
-		var b := p.object_start + p.object_dir * (ball_radius + config.object_line_length)
+		var b := p.object_start + p.object_dir * (ball_radius + length)
 		draw_line(mapper.to_screen(a), mapper.to_screen(b), object_line_color, line_width, true)

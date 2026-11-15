@@ -19,6 +19,8 @@ class Candidate extends RefCounted:
 	var direction: Vector2 = Vector2.RIGHT
 	## 0..1 (before noise).
 	var power: float = 0.5
+	## Where the cue tip hits the cue ball (ball radii from the center, x right, y up = follow, down = draw).
+	var tip: Vector2 = Vector2.ZERO
 	var cut_deg: float = 0.0
 	## Lower is better.
 	var score: float = INF
@@ -104,6 +106,183 @@ static func best_candidate(cue_pos: Vector2, state: SimState, table: TableDef, p
 		if best == null or c.score < best.score:
 			best = c
 	return best
+
+
+# ---------------------------------------------------------------- position play
+
+const EIGHT_ID: int = 8
+## Codes returned by _simulate_shot for a run that did not work out (real scores are never negative).
+const FAIL_MISS: float = -1.0
+const FAIL_FOUL: float = -2.0  # Scratch, early 8, or the cue ball hit an illegal ball first.
+
+
+## Like best_candidate, but each of the best few pocketing shots is played out in the simulator
+## (at several powers and cue tip offsets) and judged by where the cue ball stops:
+##   total = shot score + position_weight * score of the best shot available from there.
+## Runs where the target does not drop, the cue ball scratches, or a foul happens are discarded, so
+## this also filters out shots the geometric model got wrong. Returns null if nothing survives.
+##
+## A coroutine: it yields to the renderer when it has used cfg.position_frame_budget_ms, so
+## call it with `await`. `state` must not change while it runs (pass a clone).
+static func best_position_candidate(cue_pos: Vector2, state: SimState, table: TableDef,
+		params: PhysicsParams, cfg: AiConfig, targets: Array[int],
+		rng: RandomNumberGenerator) -> Candidate:
+	var found := find_candidates(cue_pos, state, table, params, cfg, targets)
+	if found.is_empty():
+		return null
+	found.sort_custom(func(a, b): return (a as Candidate).score < (b as Candidate).score)
+
+	var shooting_eight := targets.size() == 1 and targets[0] == EIGHT_ID
+	var sim_params := params.duplicate() as PhysicsParams
+	sim_params.substep = cfg.position_substep
+	var sim := PoolSimulator.new(table, sim_params)
+	var tree := Engine.get_main_loop() as SceneTree
+	var budget_us := int(cfg.position_frame_budget_ms * 1000.0)
+	var slice_start := Time.get_ticks_usec()
+
+	var tips: Array[Vector2] = cfg.position_tips
+	if tips.is_empty():
+		tips = [Vector2.ZERO]
+	var scales := cfg.position_power_scales
+	if scales.is_empty():
+		scales = PackedFloat32Array([1.0])
+
+	var best: Candidate = null
+	var best_total := INF
+	for i in mini(cfg.position_candidates, found.size()):
+		var base := found[i] as Candidate
+		var tried_powers: Array[float] = []
+		for scale in scales:
+			var power := clampf(base.power * scale, cfg.min_power, 1.0)
+			var duplicate := false
+			for p in tried_powers:
+				if is_equal_approx(p, power):
+					duplicate = true  # Two scales clamped to the same power.
+			if duplicate:
+				continue
+			tried_powers.append(power)
+			for tip in tips:
+				if tree != null and Time.get_ticks_usec() - slice_start > budget_us:
+					await tree.process_frame
+					slice_start = Time.get_ticks_usec()
+				var total := _evaluate_option(sim, state, base, power, tip, table, params, cfg,
+						targets, shooting_eight, rng)
+				if total < best_total:
+					best_total = total
+					best = Candidate.new()
+					best.target_id = base.target_id
+					best.pocket_index = base.pocket_index
+					best.direction = base.direction
+					best.cut_deg = base.cut_deg
+					best.power = power
+					best.tip = tip
+					best.score = total
+	return best
+
+
+## Score of one (shot, power, tip) option: INF if the clean run fails, else the average over
+## cfg.position_samples runs (run 0 is clean, later runs add the AI's own noise).
+static func _evaluate_option(sim: PoolSimulator, state: SimState, base: Candidate, power: float,
+		tip: Vector2, table: TableDef, params: PhysicsParams, cfg: AiConfig, targets: Array[int],
+		shooting_eight: bool, rng: RandomNumberGenerator) -> float:
+	var samples := maxi(cfg.position_samples, 1)
+	var sum := 0.0
+	for s in samples:
+		var dir := base.direction
+		var pw := power
+		if s > 0:
+			var sigma := cfg.aim_sigma_deg
+			dir = dir.rotated(deg_to_rad(clampf(rng.randfn(0.0, sigma), -2.5 * sigma, 2.5 * sigma)))
+			var power_error := clampf(rng.randfn(0.0, cfg.power_sigma), -0.15, 0.15)
+			pw = clampf(power * (1.0 + power_error), cfg.min_power, 1.0)
+		var result := _simulate_shot(sim, state, base, dir, pw, tip, table, params, cfg, targets,
+				shooting_eight)
+		if result < 0.0:
+			if s == 0:
+				return INF  # Even the clean shot fails: not an option.
+			sum += cfg.foul_penalty if result == FAIL_FOUL else cfg.miss_penalty
+		else:
+			sum += result
+	return sum / float(samples)
+
+
+## Plays the shot on a copy of the state. Returns FAIL_MISS / FAIL_FOUL, or the total score:
+## shot score + opponent-ball penalty + position_weight * next-shot score.
+static func _simulate_shot(sim: PoolSimulator, state: SimState, base: Candidate, dir: Vector2,
+		power: float, tip: Vector2, table: TableDef, params: PhysicsParams, cfg: AiConfig,
+		targets: Array[int], shooting_eight: bool) -> float:
+	var after := state.clone()
+	var events: Array[SimEvent] = []
+	sim.apply_shot(after, Shot.new(dir, power), false, null, tip)
+	sim.run_to_rest(after, cfg.position_sim_max_time, events)
+	var report := ShotReport.new()
+	report.add_events(events)
+
+	if report.cue_pocketed:
+		return FAIL_FOUL
+	var pocketed := report.object_balls_pocketed()
+	if pocketed.has(EIGHT_ID) and not shooting_eight:
+		return FAIL_FOUL
+	if not report.detect_fouls(targets, false).is_empty():
+		return FAIL_FOUL
+	if not pocketed.has(base.target_id):
+		return FAIL_MISS
+
+	var score := base.score
+	var group := _ball_group(base.target_id)
+	for id in pocketed:
+		if id != base.target_id and id != EIGHT_ID and _ball_group(id) != group:
+			score += cfg.opponent_ball_penalty
+	if shooting_eight:
+		return score  # Pocketing the 8 ends the game: nothing to set up.
+
+	var cue_end := after.get_cue_ball()
+	var next_targets := _targets_after(after, base.target_id)
+	return score + cfg.position_weight * _next_shot_score(cue_end.pos, after, table, params, cfg,
+			next_targets)
+
+
+## How good the position is: the score of the best pocketing shot from `cue_pos` (same scale as
+## shot scores, lower = better), or a penalty when only a safe hit or a blocked line remains.
+static func _next_shot_score(cue_pos: Vector2, state: SimState, table: TableDef, params: PhysicsParams,
+		cfg: AiConfig, next_targets: Array[int]) -> float:
+	if next_targets.is_empty():
+		return 0.0
+	var next := best_candidate(cue_pos, state, table, params, cfg, next_targets)
+	if next != null:
+		return next.score
+	var safe := safe_hit(cue_pos, state, table, cfg, next_targets)
+	if safe != null and safe.clear:
+		return cfg.no_shot_penalty
+	return cfg.blocked_penalty
+
+
+## Balls the shooter may hit first on the next turn (if it keeps the turn): the rest of the group
+## of the ball just pocketed, or the 8 once that group is gone.
+## Mirrors EightBallMode's ids (solids 1-7, stripes 9-15). For a ball in no group, every ball counts.
+static func _targets_after(state: SimState, pocketed_target_id: int) -> Array[int]:
+	var group := _ball_group(pocketed_target_id)
+	var ids: Array[int] = []
+	var eight_on_table := false
+	for b in state.balls:
+		if b.id == ShotReport.CUE_ID or not b.is_on_table():
+			continue
+		if b.id == EIGHT_ID:
+			eight_on_table = true
+		if group == 0 or _ball_group(b.id) == group:
+			ids.append(b.id)
+	if ids.is_empty() and eight_on_table:
+		ids.append(EIGHT_ID)
+	return ids
+
+
+## 1 = solids, 2 = stripes, 0 = the 8 / anything else.
+static func _ball_group(id: int) -> int:
+	if id >= 1 and id <= 7:
+		return 1
+	if id >= 9 and id <= 15:
+		return 2
+	return 0
 
 
 # ---------------------------------------------------------------- no makeable shot / break

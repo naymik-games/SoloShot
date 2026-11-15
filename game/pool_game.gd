@@ -83,9 +83,12 @@ func _ready() -> void:
 	if GameSession.computer_opponent >= 0:
 		computer_opponent = GameSession.computer_opponent == 1
 	if ai_config == null:
-		ai_config = AiConfig.new()
+		ai_config = Settings.make_ai_config()
 	assert(table_def != null, "Assign table_def in the inspector.")
 	assert(physics_params != null, "Assign physics_params in the inspector.")
+	var art := Settings.table_art_texture()
+	if art != null:
+		table_def.art_texture = art
 	if aim_config == null:
 		aim_config = AimConfig.new()
 	if screen_layout == null:
@@ -372,7 +375,7 @@ func _set_aim_controls_visible(visible_now: bool) -> void:
 	power_control.visible = visible_now
 	fine_aim.visible = visible_now
 	if spin_control != null:
-		spin_control.visible = visible_now
+		spin_control.visible = visible_now and Settings.spin_control_enabled
 
 
 func _resolve_shot() -> void:

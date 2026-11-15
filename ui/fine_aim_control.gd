@@ -98,7 +98,7 @@ func _apply(d: float) -> void:
 		d = -d
 	_scroll += d  # Ticks follow the finger 1:1, whatever the sensitivity.
 	var scale_factor := touch_sensitivity_scale if _is_touch else 1.0
-	nudge.emit(d * config.fine_strip_sensitivity * scale_factor)
+	nudge.emit(d * config.fine_strip_sensitivity * scale_factor * Settings.fine_aim_sensitivity)
 	queue_redraw()
 
 

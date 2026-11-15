@@ -5,7 +5,7 @@ extends Node2D
 
 ## Scene to load when a mode is picked.
 @export_file("*.tscn") var pool_game_scene_path: String = "res://scenes/pool_game.tscn"
-
+const SETTINGS_SCENE_PATH := "res://scenes/settings_screen.tscn"
 const BUTTON_SIZE := Vector2(360.0, 72.0)
 const BG_COLOR := Color(0.07, 0.17, 0.12)
 
@@ -71,6 +71,14 @@ func _build_ui() -> void:
 	_opponent_menu.add_child(_make_entry("Back", "", _show_main_menu))
 	_opponent_menu.visible = false
 	stack.add_child(_opponent_menu)
+	
+	var settings_button := Button.new()
+	settings_button.text = "Settings"
+	settings_button.custom_minimum_size = Vector2(200.0, 64.0)
+	settings_button.add_theme_font_size_override("font_size", 24)
+	settings_button.pressed.connect(_open_settings)
+	layer.add_child(settings_button)
+	settings_button.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT, Control.PRESET_MODE_MINSIZE, 24)
 
 
 ## A column with a prompt label at the top; entries get added by the caller.
@@ -132,3 +140,8 @@ func _start_game(mode: int, opponent: int) -> void:
 	var err := get_tree().change_scene_to_file(pool_game_scene_path)
 	if err != OK:
 		push_error("Could not load '%s' (error %d). Check pool_game_scene_path on the home root node." % [pool_game_scene_path, err])
+		
+func _open_settings() -> void:
+	var err := get_tree().change_scene_to_file(SETTINGS_SCENE_PATH)
+	if err != OK:
+		push_error("Could not load '%s' (error %d)." % [SETTINGS_SCENE_PATH, err])
