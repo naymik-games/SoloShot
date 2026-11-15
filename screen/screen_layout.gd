@@ -32,6 +32,12 @@ extends Resource
 ## Width of the whole player section (both panels) as a fraction of the table area's width.
 @export_range(0.3, 1.0, 0.01) var player_panel_width_fraction: float = 0.72
 
+@export_group("Solo panel")
+## Height of the solo stat bar (as tall as the band allows, up to this).
+@export var solo_panel_max_height_px: float = 72.0
+## Width of the solo stat bar as a fraction of the table area's width.
+@export_range(0.3, 1.0, 0.01) var solo_panel_width_fraction: float = 0.9
+
 @export_group("Side controls")
 ## Gap between the table and the power / fine-aim controls.
 @export var side_control_gap_px: float = 24.0
@@ -77,6 +83,18 @@ func player_strip(viewport_size: Vector2, safe_rect: Rect2 = Rect2()) -> Rect2:
 	var available := maxf(bottom - top, 0.0)
 	var h := minf(available, player_panel_max_height_px)
 	var w := table.size.x * player_panel_width_fraction
+	return Rect2(table.get_center().x - w * 0.5, top + (available - h) * 0.5, w, h)
+
+
+## The solo stat bar: centered over the table, in the band above it.
+func solo_strip(viewport_size: Vector2, safe_rect: Rect2 = Rect2()) -> Rect2:
+	var safe := safe_rect if safe_rect.size.x > 0.0 else Rect2(Vector2.ZERO, viewport_size)
+	var table := table_area(viewport_size)
+	var top := safe.position.y + player_panel_margin_px
+	var bottom := table.position.y - player_panel_margin_px
+	var available := maxf(bottom - top, 0.0)
+	var h := minf(available, solo_panel_max_height_px)
+	var w := table.size.x * solo_panel_width_fraction
 	return Rect2(table.get_center().x - w * 0.5, top + (available - h) * 0.5, w, h)
 
 

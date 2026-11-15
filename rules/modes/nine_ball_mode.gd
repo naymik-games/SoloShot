@@ -63,6 +63,37 @@ func status_text() -> String:
 	return text
 
 
+## Panels for the solo bar: shots, penalty shots, and the next ball as a ball icon.
+func solo_stats() -> Array[SoloStat]:
+	var stats: Array[SoloStat] = []
+	stats.append(SoloStat.make_number("SHOTS", shots))
+	var penalty := SoloStat.make_number("PENALTY", penalty_shots)
+	if penalty_shots > 0:
+		penalty.tint = Color(1.0, 0.45, 0.35)
+	stats.append(penalty)
+	var next := -1 if finished else _lowest_on_table(_state)
+	var next_stat := SoloStat.make_ball("NEXT BALL", next)
+	next_stat.accent = true
+	stats.append(next_stat)
+	return stats
+
+
+## Only the lowest-numbered ball on the table may be hit first (the 1 on the break).
+func legal_first_balls(_player_index: int) -> Array[int]:
+	var ids: Array[int] = []
+	if finished:
+		return ids
+	var lowest := _lowest_on_table(_state)
+	if lowest > 0:
+		ids.append(lowest)
+	return ids
+
+
+## Ring the next ball at the start of every shot.
+func hint_ball_ids(player_index: int, _new_turn: bool) -> Array[int]:
+	return legal_first_balls(player_index)
+
+
 func on_shot_taken(shot: Shot) -> void:
 	# Capture the ball that must be hit first BEFORE the shot changes the table.
 	_required_ball = _lowest_on_table(_state)

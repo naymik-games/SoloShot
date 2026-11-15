@@ -19,16 +19,27 @@ var shots_this_rack: int = 0
 var last_clear_shots: int = 0
 var best_clear_shots: int = 0
 
+## Tally for the solo bar. Balls pocketed on racks that were already reracked, the size of a
+## rack, and a flag that hides the old rack's count for the frame between clearing and reracking.
+var _banked_balls: int = 0
+var _rack_size: int = 0
+var _rerack_pending: bool = false
+
+var _state: SimState
 var _table: TableDef
 
 
 func setup(state: SimState, table: TableDef) -> void:
 	_table = table
+	_state = state
 	shots_this_rack = 0
+	_banked_balls = 0
+	_rerack_pending = false
 	if layout != null:
 		layout.apply_to(state)
-		return
-	RackBuilder.new_game(state, table, RackBuilder.triangle_15(table))
+	else:
+		RackBuilder.new_game(state, table, RackBuilder.triangle_15(table))
+	_rack_size = _count_object_balls(state)
 
 
 ## Same opening as 9-ball: the player places the cue ball anywhere behind the head string.
@@ -39,8 +50,20 @@ func initial_cue_placement() -> CuePlacement:
 	return CuePlacement.behind_head_string(_table)
 
 
+## Panels for the solo bar: balls pocketed in total and on this rack, shots, best clear.
+func solo_stats() -> Array[SoloStat]:
+	var on_rack := 0 if _rerack_pending else _count_pocketed_object_balls(_state)
+	var stats: Array[SoloStat] = []
+	stats.append(SoloStat.make_number("POCKETED", _banked_balls + on_rack))
+	stats.append(SoloStat.make_text("THIS RACK", "%d / %d" % [on_rack, _rack_size]))
+	stats.append(SoloStat.make_number("SHOTS", shots_this_rack))
+	stats.append(SoloStat.make_text("BEST CLEAR", "-" if best_clear_shots == 0 else str(best_clear_shots)))
+	return stats
+
+
 func on_shot_taken(shot: Shot) -> void:
 	shots_this_rack += 1
+	_rerack_pending = false
 
 
 func on_shot_ended(state: SimState, report: ShotReport) -> ShotResult:
@@ -66,7 +89,27 @@ func on_shot_ended(state: SimState, report: ShotReport) -> ShotResult:
 		result.message = note if result.message.is_empty() else result.message + " | " + note
 		if rerack_when_cleared and layout == null:
 			result.rerack = RackBuilder.triangle_15(_table)
+			_banked_balls += _rack_size
+			_rerack_pending = true
 	return result
+
+
+func _count_object_balls(state: SimState) -> int:
+	var n := 0
+	for b in state.balls:
+		if b.id != ShotReport.CUE_ID:
+			n += 1
+	return n
+
+
+func _count_pocketed_object_balls(state: SimState) -> int:
+	if state == null:
+		return 0
+	var n := 0
+	for b in state.balls:
+		if b.id != ShotReport.CUE_ID and not b.is_on_table():
+			n += 1
+	return n
 
 
 ## True when object balls exist but none are left on the table.

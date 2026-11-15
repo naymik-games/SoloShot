@@ -19,6 +19,13 @@ func status_text() -> String:
 	return ""
 
 
+## Optional: the panels of the solo stat bar above the table (see SoloPanel). Empty = no bar.
+## Only used by one-player modes; the HUD's text status is hidden when a bar is shown.
+func solo_stats() -> Array[SoloStat]:
+	var none: Array[SoloStat] = []
+	return none
+
+
 ## How many players take turns. 1 = solo (the default). PoolGame creates that many players.
 func player_count() -> int:
 	return 1
@@ -42,9 +49,23 @@ func player_group_balls(player_index: int) -> Array[int]:
 	return []
 
 
-## For computer players: ids of the balls the next shot may legally hit first.
+## Ids of the balls the next shot may legally hit first. Single source of truth: foul detection,
+## computer players, ball hints and the red aim line all use it.
 ## Empty = any ball is legal (the break, or a mode without such a rule).
 func legal_first_balls(_player_index: int) -> Array[int]:
+	var none: Array[int] = []
+	return none
+
+
+## True if hitting this ball first would be legal. Drives the red aim line.
+func is_legal_first_ball(ball_id: int, player_index: int) -> bool:
+	var legal := legal_first_balls(player_index)
+	return legal.is_empty() or legal.has(ball_id)
+
+
+## Balls to ring briefly when a human player starts aiming. `new_turn` is true only for the first
+## aiming of a turn (not when the player pocketed a ball and keeps shooting). Empty = no hint.
+func hint_ball_ids(_player_index: int, _new_turn: bool) -> Array[int]:
 	var none: Array[int] = []
 	return none
 

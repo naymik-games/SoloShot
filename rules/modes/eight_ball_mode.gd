@@ -90,6 +90,15 @@ func legal_first_balls(player_index: int) -> Array[int]:
 	return own
 
 
+## Ring the shooter's legal balls at the start of a turn, once groups are decided.
+## No hint on the break, on an open table, or when the player keeps shooting.
+func hint_ball_ids(player_index: int, new_turn: bool) -> Array[int]:
+	var none: Array[int] = []
+	if not new_turn or _break_pending or _groups[player_index] == Group.NONE:
+		return none
+	return legal_first_balls(player_index)
+
+
 ## Groups and pocketed balls are on the player panels; this only says what the panels can't.
 func status_text() -> String:
 	if _break_pending:
@@ -122,20 +131,14 @@ func on_shot_taken(_shot: Shot) -> void:
 	_shooter = _current
 	_shot_is_break = _break_pending
 	_shooting_at_eight = false
-	_legal_first = []
+	# Same rule the hints and the red aim line use (empty on the break: any first contact is fine).
+	_legal_first = legal_first_balls(_shooter)
 	_cushion_balls.clear()
 	if _shot_is_break:
-		return  # Any first contact is fine on the break.
-	var group := _groups[_shooter]
-	if group == Group.NONE:
-		_legal_first = _object_balls_on_table(false)
 		return
-	var own := _balls_of_group_on_table(group)
-	if own.is_empty():
+	var group := _groups[_shooter]
+	if group != Group.NONE and _balls_of_group_on_table(group).is_empty():
 		_shooting_at_eight = true
-		_legal_first = [EIGHT]
-	else:
-		_legal_first = own
 
 
 func on_events(events: Array[SimEvent], _sim_state: SimState) -> void:

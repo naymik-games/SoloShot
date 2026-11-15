@@ -61,6 +61,8 @@ var turns: TurnManager
 var human_controller: HumanController
 ## Player section above the table. Only exists when the mode has more than one player.
 var players_panel: PlayersPanel
+## Stat bar above the table for one-player modes whose mode provides solo_stats().
+var solo_panel: SoloPanel
 ## Number of shots taken so far (the shot being played counts).
 var shots_taken: int = 0
 
@@ -73,7 +75,10 @@ var _cue_placement: CuePlacement
 var _is_break_shot: bool = false
 var _shot_rng := RandomNumberGenerator.new()
 
-
+## Rings the legal target balls when a human starts aiming.
+var hint_layer: BallHintLayer
+## True from the start of the game and whenever the turn switches, until aiming begins.
+var _turn_is_new: bool = true
 # ---------------------------------------------------------------- setup
 
 func _ready() -> void:
@@ -131,7 +136,13 @@ func _build_views() -> void:
 		debug_overlay.state = state
 		debug_overlay.table = table_def
 		debug_overlay.mapper = mapper
-
+	
+	hint_layer = BallHintLayer.new()
+	hint_layer.state = state
+	hint_layer.mapper = mapper
+	hint_layer.ball_radius = table_def.ball_radius
+	add_child(hint_layer)
+	move_child(hint_layer, aim_overlay.get_index())  # Above the balls, below the aim line.
 
 ## Input: one AimConfig is shared so tuning the .tres affects every control.
 func _wire_aim_input() -> void:
@@ -139,6 +150,8 @@ func _wire_aim_input() -> void:
 	aim_controller.config = aim_config
 	aim_controller.world_node = self
 	fine_aim.config = aim_config
+	
+	aim_controller.ball_picker = _pick_object_ball
 
 	aim_controller.aim_changed.connect(_on_aim_changed)
 	aim_controller.input_enabled_changed.connect(func(_e: bool) -> void: _sync_ui())
@@ -187,6 +200,7 @@ func _start_game() -> void:
 	_build_players(mode.player_count())
 	_build_players_panel()
 	mode.setup(state, table_def)
+	_build_solo_panel()
 	mode.on_turn_started(turns.current_index)
 	_refresh_players_panel()
 	_prepare_fresh_rack()
@@ -234,6 +248,7 @@ func _advance_turn(result: ShotResult) -> void:
 	if result == null or result.turn != ShotResult.Turn.SWITCH:
 		return
 	turns.advance()
+	_turn_is_new = true
 	mode.on_turn_started(turns.current_index)
 	_refresh_hud_status()
 	_refresh_players_panel()
@@ -244,6 +259,11 @@ func _current_player_uses_touch() -> bool:
 
 
 func _refresh_hud_status() -> void:
+	if solo_panel != null:
+		solo_panel.refresh(mode.solo_stats())  # The bar replaces the plain text status.
+		if hud != null:
+			hud.set_status("")
+		return
 	if hud != null:
 		hud.set_status(mode.status_text())
 
@@ -261,6 +281,16 @@ func _build_players_panel() -> void:
 
 func _players_strip(viewport_size: Vector2) -> Rect2:
 	return screen_layout.player_strip(viewport_size, SafeArea.get_rect(get_viewport()))
+
+
+## The stat bar: only for one-player modes that describe their panels in solo_stats().
+func _build_solo_panel() -> void:
+	if turns.count() > 1 or solo_panel != null or mode.solo_stats().is_empty():
+		return
+	solo_panel = SoloPanel.new()
+	solo_panel.setup(table_def.ball_radius)
+	add_child(solo_panel)
+	solo_panel.layout(screen_layout.solo_strip(get_viewport_rect().size, SafeArea.get_rect(get_viewport())))
 
 
 ## Push the current names, groups and whose turn it is to the panel.
@@ -349,6 +379,8 @@ func _set_phase(new_phase: Phase) -> void:
 
 ## No aiming: input off, overlay and cue stick hidden.
 func _enter_idle() -> void:
+	if hint_layer != null:
+		hint_layer.clear()
 	aim_controller.set_input_enabled(false)
 	if turns != null:
 		turns.current().controller.cancel()  # Also stops a computer player that is still thinking.
@@ -362,12 +394,15 @@ func _enter_aiming() -> void:
 		push_warning("AIMING phase with no cue ball on the table.")
 		_enter_idle()
 		return
+	var new_turn := _turn_is_new
+	_turn_is_new = false
 	var controller := turns.current().controller
 	controller.begin_shot(state)
 	if controller.uses_touch_controls():
 		_prediction_dirty = true
 		cue_stick.refresh()
 		cue_stick.visible = true
+		hint_layer.show_hint(mode.hint_ball_ids(turns.current_index, new_turn))
 
 
 ## Aiming controls are hidden while the player is placing the cue ball.
@@ -480,8 +515,16 @@ func _update_prediction() -> void:
 	if cue == null or not cue.is_on_table():
 		aim_overlay.clear()
 		return
-	aim_overlay.update_overlay(predictor.predict(state, aim_controller.aim.angle))
+	var prediction := predictor.predict(state, aim_controller.aim.angle)
+	aim_overlay.update_overlay(prediction, _is_illegal_target(prediction))
 
+
+## Red aim line: the ball the cue would hit first is not a legal target. A line that reaches no
+## ball (cushion only) or scratches is never flagged here.
+func _is_illegal_target(prediction: PredictionResult) -> bool:
+	if prediction.outcome != PredictionResult.Outcome.HITS_BALL:
+		return false
+	return not mode.is_legal_first_ball(prediction.hit_ball_id, turns.current_index)
 
 func _on_aim_changed() -> void:
 	_sync_ui()
@@ -518,5 +561,28 @@ func _on_viewport_resized() -> void:
 		tray.layout(screen_layout.tray_strip(viewport_size))
 	if players_panel != null:
 		players_panel.layout(_players_strip(viewport_size))
+	if solo_panel != null:
+		solo_panel.layout(screen_layout.solo_strip(viewport_size, SafeArea.get_rect(get_viewport())))
 	if placement_flow != null:
 		placement_flow.redraw()
+
+## Tap-to-aim hit test. `screen_pos` is in PoolGame local pixels. Returns the object ball nearest
+## the tap (within ball radius + the controller's margin), or null. The cue ball and pocketed
+## balls are never picked, and a tap on the cue ball itself picks nothing.
+func _pick_object_ball(screen_pos: Vector2) -> BallState:
+	var cue := state.get_cue_ball()
+	if cue != null and cue.is_on_table():
+		var cue_r := mapper.length_to_screen(table_def.ball_radius)
+		if mapper.to_screen(cue.pos).distance_to(screen_pos) <= cue_r:
+			return null
+	var reach := mapper.length_to_screen(table_def.ball_radius) + aim_controller.tap_hit_margin_px
+	var best: BallState = null
+	var best_d := reach
+	for ball in state.balls:  # ASSUMPTION: SimState exposes its balls as `balls`. Adjust if named differently.
+		if ball == cue or not ball.is_on_table():
+			continue
+		var d := mapper.to_screen(ball.pos).distance_to(screen_pos)
+		if d <= best_d:
+			best = ball
+			best_d = d
+	return best

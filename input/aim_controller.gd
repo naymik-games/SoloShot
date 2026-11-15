@@ -17,17 +17,33 @@ signal aim_changed
 signal gesture_started
 signal gesture_ended
 signal input_enabled_changed(enabled: bool)
+## A tap landed on an object ball and the aim was set on it. (Call-shot can reuse this later.)
+signal ball_tapped(ball: BallState)
 
 @export var config: AimConfig
 ## Node2D whose local space matches CoordinateMapper pixels (normally the PoolGame node).
 @export var world_node: Node2D
 
+@export_group("Tap to aim")
+@export var tap_to_aim_enabled: bool = true
+## A press that moves farther than this (screen px) is a drag, not a tap.
+@export var tap_max_move_px: float = 14.0
+## A press held longer than this is not a tap.
+@export var tap_max_seconds: float = 0.35
+## Extra reach around a ball (screen px) so a fingertip doesn't have to be exact.
+@export var tap_hit_margin_px: float = 10.0
+
 var aim: AimState = AimState.new()
 var mapper: CoordinateMapper
 var input_enabled: bool = false
+## func(screen_pos: Vector2) -> BallState (or null). Set by PoolGame; decides which ball a tap hit.
+var ball_picker: Callable = Callable()
 
 var _dragging: bool = false
 var _grab_offset: float = 0.0
+var _tap_candidate: bool = false
+var _press_pos: Vector2 = Vector2.ZERO
+var _press_msec: int = 0
 
 
 func _ready() -> void:
@@ -52,6 +68,7 @@ func set_input_enabled(enabled: bool) -> void:
 		return
 	input_enabled = enabled
 	if not enabled:
+		_tap_candidate = false
 		_end_drag()
 	input_enabled_changed.emit(enabled)
 
@@ -122,8 +139,13 @@ func _handle_mouse_button(event: InputEventMouseButton) -> void:
 	match event.button_index:
 		MOUSE_BUTTON_LEFT:
 			if event.pressed:
-				_begin_drag(_local_pos(event))
+				var p := _local_pos(event)
+				_tap_candidate = tap_to_aim_enabled
+				_press_pos = p
+				_press_msec = Time.get_ticks_msec()
+				_begin_drag(p)
 			else:
+				_try_tap(_local_pos(event))
 				_end_drag()
 		MOUSE_BUTTON_WHEEL_UP:
 			if event.pressed:
@@ -134,6 +156,8 @@ func _handle_mouse_button(event: InputEventMouseButton) -> void:
 
 
 func _handle_mouse_motion(event: InputEventMouseMotion) -> void:
+	if _tap_candidate and _local_pos(event).distance_to(_press_pos) > tap_max_move_px:
+		_tap_candidate = false  # Moved too far: it's a drag.
 	if not _dragging or mapper == null:
 		return
 	var rel := _local_pos(event) - mapper.to_screen(aim.cue_ball_pos)
@@ -173,6 +197,27 @@ func _begin_drag(p: Vector2) -> void:
 	# Offset so the aim line doesn't jump to the finger on touch-down.
 	_grab_offset = angle_difference(rel.angle(), aim.angle)
 	gesture_started.emit()
+
+
+# ---------------------------------------------------------------- tap to aim
+
+## On release: if the press was a quick, small-movement tap on an object ball, aim straight at it.
+func _try_tap(p: Vector2) -> void:
+	if not _tap_candidate:
+		return
+	_tap_candidate = false
+	if (Time.get_ticks_msec() - _press_msec) / 1000.0 > tap_max_seconds:
+		return
+	if mapper == null or not ball_picker.is_valid():
+		return
+	var ball: BallState = ball_picker.call(p)
+	if ball == null:
+		return
+	var to_ball := ball.pos - aim.cue_ball_pos
+	if to_ball.length_squared() < 0.000001:
+		return
+	_set_angle(to_ball.angle())
+	ball_tapped.emit(ball)
 
 
 func _end_drag() -> void:

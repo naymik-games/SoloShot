@@ -26,6 +26,10 @@ const BONUS_MIN: float = 0.0
 
 const SCRATCH_TIME: float = 30.0
 
+## Solo bar: show the row of multiplier circles, and flash the clock below this many seconds.
+const SHOW_MULTIPLIER_PIPS: bool = true
+const LOW_TIME_WARNING: float = 10.0
+
 ## Seconds on the clock at the start.
 var start_time: float = 120.0
 var time_left: float = 0.0
@@ -66,6 +70,21 @@ func status_text() -> String:
 	return "Time %s   Score %d\nx%.1f   Rack %d   Balls %d" % [
 		_format_time(time_left), score, multiplier, rack_number, balls_pocketed
 	]
+
+
+## Panels for the solo bar: multiplier circles (half circle per step), multiplier, rack, time, score.
+func solo_stats() -> Array[SoloStat]:
+	var stats: Array[SoloStat] = []
+	if SHOW_MULTIPLIER_PIPS:
+		var steps := roundi((multiplier - MULT_MIN) / MULT_STEP)
+		stats.append(SoloStat.make_pips(_pip_count(), steps))
+	stats.append(SoloStat.make_text("MULTIPLIER", "%.1fx" % multiplier))
+	stats.append(SoloStat.make_text("RACK", str(rack_number)))
+	var time_stat := SoloStat.make_text("TIME", _format_clock(time_left))
+	time_stat.warn = _clock_running and not finished and time_left <= LOW_TIME_WARNING
+	stats.append(time_stat)
+	stats.append(SoloStat.make_number("SCORE", score, true))
+	return stats
 
 
 func tick(delta: float) -> void:
@@ -162,6 +181,17 @@ func _object_balls_on_table(state: SimState) -> int:
 
 func _format_seconds(t: float) -> String:
 	return "%d" % roundi(t) if is_equal_approx(t, roundf(t)) else "%.1f" % t
+
+
+## Two half steps (a half circle each) per circle: 1.0x to 4.0x in 0.5 steps is 3 circles.
+func _pip_count() -> int:
+	return ceili((MULT_MAX - MULT_MIN) / MULT_STEP / 2.0)
+
+
+## mm:ss, rounded up so the clock shows 00:00 only when time is really out.
+func _format_clock(t: float) -> String:
+	var total := ceili(maxf(t, 0.0))
+	return "%02d:%02d" % [floori(float(total) / 60.0), total % 60]
 
 
 func _format_time(t: float) -> String:
