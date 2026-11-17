@@ -14,7 +14,7 @@
 [ext_resource type="Script" uid="uid://bjq2it12nog2f" path="res://ui/power_control.gd" id="8_c06dw"]
 [ext_resource type="Script" uid="uid://j1cfi1oskw4j" path="res://ui/fine_aim_control.gd" id="9_wlwqg"]
 [ext_resource type="Script" uid="uid://c7i4oq6upw3my" path="res://view/placement_overlay.gd" id="9_xsq6e"]
-[ext_resource type="Texture2D" uid="uid://cg7fwibpmsoc3" path="res://art/menuList.png" id="14_xsq6e"]
+[ext_resource type="Texture2D" uid="uid://bnrffbbwtkpci" path="res://art/menu_64dp_FFFFFF_FILL0_wght400_GRAD0_opsz48.png" id="15_tsh5i"]
 
 [node name="pool_game" type="Node2D" unique_id=880535942]
 script = ExtResource("1_vq815")
@@ -22,13 +22,12 @@ mode_type = 2
 table_def = ExtResource("2_xsq6e")
 physics_params = ExtResource("3_c06dw")
 aim_config = ExtResource("7_ht80v")
-debug_print_shot_report = null
 computer_opponent = true
 
 [node name="TextureRect" type="TextureRect" parent="." unique_id=745439995]
 custom_minimum_size = Vector2(1152, 648)
-offset_right = 1152.0
-offset_bottom = 648.0
+offset_right = 2046.0
+offset_bottom = 1024.0
 size_flags_horizontal = 3
 size_flags_vertical = 3
 texture = ExtResource("5_tsh5i")
@@ -94,7 +93,7 @@ custom_minimum_size = Vector2(64, 64)
 layout_mode = 0
 offset_right = 64.0
 offset_bottom = 64.0
-texture_normal = ExtResource("14_xsq6e")
+texture_normal = ExtResource("15_tsh5i")
 ignore_texture_size = true
 stretch_mode = 4
 

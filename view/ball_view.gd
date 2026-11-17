@@ -9,9 +9,10 @@ extends Node2D
 ## Art: res://art/balls/ball_<id>.png (0 = cue ball), 2:1 wrapped texture, number spots at
 ## u = 0.25 and 0.75. Balls without a texture fall back to a flat color with spots so rolling is
 ## still visible while the art is being made.
+## res://art/balls/<set>/ball_<id>.png.
 
 const BALL_SHADER: Shader = preload("res://shaders/ball_sphere.gdshader")
-const TEXTURE_PATH: String = "res://art/balls/ball_%d.png"
+#const TEXTURE_PATH: String = "res://art/balls/alt_0/ball_%d.png"
 
 const PALETTE: Array[Color] = [
 	Color(0.96, 0.77, 0.09),  # 1 yellow
@@ -140,6 +141,7 @@ func _ensure_assets() -> void:
 		_material.shader = BALL_SHADER
 		_material.set_shader_parameter("pad", QUAD_PAD)
 		material = _material
+		Settings.changed.connect(_on_setting_changed)
 		var img := Image.create(1, 1, false, Image.FORMAT_RGBA8)
 		img.fill(Color.WHITE)
 		_quad_tex = ImageTexture.create_from_image(img)
@@ -148,7 +150,7 @@ func _ensure_assets() -> void:
 	_loaded_id = ball_id
 
 	var tex: Texture2D = null
-	var path := TEXTURE_PATH % ball_id
+	var path := Settings.ball_texture_path(ball_id)
 	if ResourceLoader.exists(path):
 		tex = load(path) as Texture2D
 	_material.set_shader_parameter("use_texture", tex != null)
@@ -160,3 +162,8 @@ func _ensure_assets() -> void:
 		_material.set_shader_parameter("fallback_stripe", ball_id >= 9)
 	_reset_orientation()
 	queue_redraw()
+
+func _on_setting_changed(key: String) -> void:
+	if key == "ball_set":
+		_loaded_id = -1  # Forces a texture reload on the next _ensure_assets().
+		_ensure_assets()

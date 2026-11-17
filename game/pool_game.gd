@@ -8,7 +8,8 @@ extends Node2D
 ##   TurnManager   - whose turn it is; each Player has a PlayerController (human now, AI later)
 ##   PlayersPanel  - avatar, name, group and pocketed balls per player (multi-player modes only)
 
-enum Phase { SETUP, AIMING, PLACING, SIMULATING, RESOLVING, GAME_OVER }
+## INTERLUDE = the pause a mode asks for between a shot and what follows (ShotResult.followup).
+enum Phase { SETUP, AIMING, PLACING, SIMULATING, RESOLVING, GAME_OVER, INTERLUDE }
 
 ## Which rules to play.
 @export var mode_type: ModeCatalog.Type = ModeCatalog.Type.NINE_BALL
@@ -75,6 +76,8 @@ var _cue_placement: CuePlacement
 var _is_break_shot: bool = false
 var _shot_rng := RandomNumberGenerator.new()
 
+## Paints the mode's target (Target Practice) between the table and the balls.
+var target_view: TargetView
 ## Rings the legal target balls when a human starts aiming.
 var hint_layer: BallHintLayer
 ## True from the start of the game and whenever the turn switches, until aiming begins.
@@ -137,6 +140,11 @@ func _build_views() -> void:
 		debug_overlay.table = table_def
 		debug_overlay.mapper = mapper
 	
+	target_view = TargetView.new()
+	target_view.mapper = mapper
+	add_child(target_view)
+	move_child(target_view, table_view.get_index() + 1)  # Above the table, below the balls.
+
 	hint_layer = BallHintLayer.new()
 	hint_layer.state = state
 	hint_layer.mapper = mapper
@@ -201,6 +209,7 @@ func _start_game() -> void:
 	_build_players_panel()
 	mode.setup(state, table_def)
 	_build_solo_panel()
+	_refresh_target()
 	mode.on_turn_started(turns.current_index)
 	_refresh_players_panel()
 	_prepare_fresh_rack()
@@ -422,7 +431,25 @@ func _resolve_shot() -> void:
 	if result != null and result.game_over:
 		_set_phase(Phase.GAME_OVER)
 		return
+	if result != null and result.followup.is_valid():
+		_run_followup(result)
+		return
+	_finish_resolution(result)
 
+
+## Pause (input off, balls and target left as they are), then apply the mode's follow-up result.
+func _run_followup(result: ShotResult) -> void:
+	_set_phase(Phase.INTERLUDE)
+	await get_tree().create_timer(maxf(result.followup_delay, 0.0)).timeout
+	if not is_inside_tree() or phase != Phase.INTERLUDE:
+		return
+	var next: ShotResult = result.followup.call()
+	_apply_result(next)
+	_finish_resolution(next)
+
+
+## Turn handover, cue ball placement and back to aiming.
+func _finish_resolution(result: ShotResult) -> void:
 	_advance_turn(result)
 	var next_placement := _choose_cue_placement(result)
 	if next_placement != null and next_placement.mode != CuePlacement.Mode.NONE:
@@ -441,6 +468,9 @@ func _apply_result(result: ShotResult) -> void:
 				hud.show_message(result.message, result.game_over)
 		# TODO: result.respot_balls (if the mode doesn't mutate `state` itself) and result.foul handling.
 	_refresh_hud_status()
+	_refresh_target()  # A mode like Target Practice moves the target between rounds.
+	if result != null and result.celebrate_points > 0 and target_view != null:
+		target_view.play_score_effect(result.celebrate_points)  # After set_spec, which cancels effects.
 	if result != null and result.rerack != null:
 		pocketed_log.clear()
 		RackBuilder.place_rack(state, result.rerack)
@@ -471,6 +501,9 @@ func _choose_cue_placement(result: ShotResult) -> CuePlacement:
 ## Call right after a rack is placed (first rack and every rerack): tiny random offsets so
 ## breaks come out differently, and flag the next shot as the break.
 func _prepare_fresh_rack() -> void:
+	# Precision layouts (Target Practice) must stay exact and are not a break.
+	if not mode.randomize_racks():
+		return
 	# Free Practice with a custom layout is a drill, not a rack: leave it exact.
 	if mode_type == ModeCatalog.Type.FREE_PRACTICE and layout != null:
 		return
@@ -509,6 +542,12 @@ func _on_placement_confirmed() -> void:
 
 
 # ---------------------------------------------------------------- aiming / UI
+
+## Hand the mode's current target (or null) to the view.
+func _refresh_target() -> void:
+	if target_view != null and mode != null:
+		target_view.set_spec(mode.target_spec())
+
 
 func _update_prediction() -> void:
 	var cue := state.get_cue_ball()
@@ -555,6 +594,8 @@ func _on_viewport_resized() -> void:
 	if balls_layer != null and state != null:
 		balls_layer.sync_from(state, mapper)
 	aim_overlay.queue_redraw()
+	if target_view != null:
+		target_view.queue_redraw()
 	if cue_stick != null:
 		cue_stick.refresh()
 	if tray != null:

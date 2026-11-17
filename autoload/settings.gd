@@ -20,6 +20,10 @@ const TABLE_ART_DIR := "res://art/tables"
 const DEFAULT_TABLE_ART := "res://art/tables/standard.png"
 const IMAGE_EXTENSIONS: Array[String] = ["png", "jpg", "jpeg", "webp", "svg"]
 
+const BALL_SET_DIR := "res://art/balls"
+## Used when nothing is saved (or the saved folder is gone). Falls back to the first folder found.
+const DEFAULT_BALL_SET := "alt_0"
+
 ## Object-ball line: stops 0..4. 0 = off, DEFAULT_OBJECT_LINE_STOP = the length used today.
 const MAX_OBJECT_LINE_STOP := 4
 const DEFAULT_OBJECT_LINE_STOP := 2
@@ -36,6 +40,7 @@ const DEFAULTS := {
 	"fine_aim_sensitivity": 1.0,
 	"spin_control_enabled": true,
 	"ai_difficulty": AiProfiles.Level.MEDIUM,
+	"ball_set": DEFAULT_BALL_SET,
 }
 
 var table_art_path: String:
@@ -43,6 +48,13 @@ var table_art_path: String:
 		return _values["table_art_path"]
 	set(value):
 		set_value("table_art_path", value)
+
+## Folder name under res://art/balls, e.g. "alt_0".
+var ball_set: String:
+	get:
+		return _values["ball_set"]
+	set(value):
+		set_value("ball_set", value)
 
 ## 0 = no line, 1..4; 2 is the current length. Use object_line_scale() to apply it.
 var object_line_stop: int:
@@ -129,7 +141,18 @@ func list_table_art() -> Array[String]:
 func table_art_texture() -> Texture2D:
 	return load(table_art_path) as Texture2D
 
+## Every folder in res://art/balls, sorted. Each one is a ball set.
+func list_ball_sets() -> Array[String]:
+	var found: Array[String] = []
+	for dir_name in DirAccess.get_directories_at(BALL_SET_DIR):
+		found.append(dir_name)
+	found.sort()
+	return found
 
+
+## Texture path for one ball (0 = cue ball) in the chosen set.
+func ball_texture_path(ball_id: int) -> String:
+	return "%s/%s/ball_%d.png" % [BALL_SET_DIR, ball_set, ball_id]
 # ---------------------------------------------------------------- writing
 
 func set_value(key: String, value: Variant) -> void:
@@ -190,6 +213,9 @@ func _sanitize(key: String, value: Variant) -> Variant:
 					MIN_FINE_AIM_SENSITIVITY, MAX_FINE_AIM_SENSITIVITY)
 		"ai_difficulty":
 			return clampi(int(value), 0, AiProfiles.LEVEL_NAMES.size() - 1)
+		"ball_set":
+			var set_name := String(value)
+			return set_name if list_ball_sets().has(set_name) else _fallback_ball_set()
 		_:
 			return bool(value)  # The remaining settings are on/off switches.
 
@@ -199,3 +225,10 @@ func _fallback_table_art() -> String:
 		return DEFAULT_TABLE_ART
 	var all := list_table_art()
 	return all[0] if not all.is_empty() else ""
+
+
+func _fallback_ball_set() -> String:
+	var all := list_ball_sets()
+	if all.has(DEFAULT_BALL_SET):
+		return DEFAULT_BALL_SET
+	return all[0] if not all.is_empty() else DEFAULT_BALL_SET

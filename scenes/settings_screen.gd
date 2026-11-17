@@ -26,6 +26,16 @@ var _table_name: Label
 var _table_prev: Button
 var _table_next: Button
 
+const BALL_PREVIEW_IDS: Array[int] = [0, 1, 8, 9, 15]  # Cue, a solid, the 8, a stripe, the last stripe.
+const BALL_PREVIEW_RADIUS := 28.0
+
+var _ball_sets: Array[String] = []
+var _ball_index := 0
+var _ball_name: Label
+var _ball_prev: Button
+var _ball_next: Button
+
+
 var _prediction_slider: HSlider
 var _prediction_value: Label
 var _aim_guide_toggle: CheckButton
@@ -95,6 +105,7 @@ func _build_ui() -> void:
 
 	_add_section("Player preferences")
 	_build_table_art_row()
+	_build_ball_set_row()
 	_build_prediction_row()
 	_aim_guide_toggle = _add_toggle_row("Aim guide", "Ghost ball and the line to the first ball hit",
 			_on_aim_guide_toggled)
@@ -189,7 +200,7 @@ func _build_table_art_row() -> void:
 	carousel.add_theme_constant_override("separation", 12)
 	row.add_child(carousel)
 
-	_table_prev = _make_arrow_button("<", -1)
+	_table_prev = _make_arrow_button("<", _step_table.bind(-1))
 	carousel.add_child(_table_prev)
 
 	var middle := VBoxContainer.new()
@@ -207,17 +218,53 @@ func _build_table_art_row() -> void:
 	_table_name.add_theme_font_size_override("font_size", 18)
 	middle.add_child(_table_name)
 
-	_table_next = _make_arrow_button(">", 1)
+	_table_next = _make_arrow_button(">", _step_table.bind(1))
 	carousel.add_child(_table_next)
 
 
-func _make_arrow_button(text: String, direction: int) -> Button:
+func _build_ball_set_row() -> void:
+	var row := _make_row("Ball set", "Choose the look of the balls")
+	_ball_sets = Settings.list_ball_sets()
+
+	var carousel := HBoxContainer.new()
+	carousel.alignment = BoxContainer.ALIGNMENT_CENTER
+	carousel.add_theme_constant_override("separation", 12)
+	row.add_child(carousel)
+
+	_ball_prev = _make_arrow_button("<", _step_ball_set.bind(-1))
+	carousel.add_child(_ball_prev)
+
+	var middle := VBoxContainer.new()
+	middle.add_theme_constant_override("separation", 4)
+	carousel.add_child(middle)
+
+	# Real BallViews, so the preview matches what the game draws. They reload themselves
+	# when Settings.ball_set changes.
+	var spacing := BALL_PREVIEW_RADIUS * 2.0 + 14.0
+	var holder := Control.new()
+	holder.custom_minimum_size = Vector2(spacing * BALL_PREVIEW_IDS.size(), BALL_PREVIEW_RADIUS * 2.0 + 16.0)
+	middle.add_child(holder)
+	for i in range(BALL_PREVIEW_IDS.size()):
+		var ball := BallView.new()
+		ball.ball_id = BALL_PREVIEW_IDS[i]
+		holder.add_child(ball)
+		ball.show_static(Vector2(spacing * (i + 0.5), holder.custom_minimum_size.y * 0.5), BALL_PREVIEW_RADIUS)
+
+	_ball_name = Label.new()
+	_ball_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_ball_name.add_theme_font_size_override("font_size", 18)
+	middle.add_child(_ball_name)
+
+	_ball_next = _make_arrow_button(">", _step_ball_set.bind(1))
+	carousel.add_child(_ball_next)
+
+func _make_arrow_button(text: String, on_pressed: Callable) -> Button:
 	var button := Button.new()
 	button.text = text
 	button.custom_minimum_size = ARROW_BUTTON_SIZE
 	button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	button.add_theme_font_size_override("font_size", 28)
-	button.pressed.connect(_step_table.bind(direction))
+	button.pressed.connect(on_pressed)
 	return button
 
 
@@ -320,6 +367,9 @@ func _apply_safe_area() -> void:
 func _sync_from_settings() -> void:
 	_table_index = maxi(_table_art.find(Settings.table_art_path), 0)
 	_refresh_table_art()
+	
+	_ball_index = maxi(_ball_sets.find(Settings.ball_set), 0)
+	_refresh_ball_set()
 
 	_prediction_slider.set_value_no_signal(Settings.object_line_stop)
 	_update_prediction_label()
@@ -343,8 +393,10 @@ func _refresh_table_art() -> void:
 		return
 	var path := _table_art[_table_index]
 	_table_preview.texture = load(path) as Texture2D
-	_table_name.text = "%s  (%d / %d)" % [path.get_file().get_basename(), _table_index + 1, _table_art.size()]
+	_table_name.text = "%s  (%d / %d)" % [format_base_name(path.get_file().get_basename()), _table_index + 1, _table_art.size()]
 
+func format_base_name(base_name: String) -> String:
+	return base_name.capitalize()
 
 func _update_prediction_label() -> void:
 	var stop := int(_prediction_slider.value)
@@ -364,6 +416,23 @@ func _step_table(direction: int) -> void:
 	Settings.table_art_path = _table_art[_table_index]
 	_refresh_table_art()
 
+
+func _refresh_ball_set() -> void:
+	var several := _ball_sets.size() > 1
+	_ball_prev.disabled = not several
+	_ball_next.disabled = not several
+	if _ball_sets.is_empty():
+		_ball_name.text = "No ball sets found in %s" % Settings.BALL_SET_DIR
+		return
+	_ball_name.text = "%s  (%d / %d)" % [format_base_name(_ball_sets[_ball_index]), _ball_index + 1, _ball_sets.size()]
+
+
+func _step_ball_set(direction: int) -> void:
+	if _ball_sets.is_empty():
+		return
+	_ball_index = posmod(_ball_index + direction, _ball_sets.size())
+	Settings.ball_set = _ball_sets[_ball_index]
+	_refresh_ball_set()
 
 func _on_prediction_changed(value: float) -> void:
 	Settings.object_line_stop = int(value)

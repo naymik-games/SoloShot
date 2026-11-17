@@ -14,24 +14,35 @@ const OPPONENT_DEFAULT := -1
 const OPPONENT_HUMAN := 0
 const OPPONENT_COMPUTER := 1
 
-## label, subtitle, mode (matches ModeCatalog.Type).
-## "choose_opponent" entries open the opponent picker instead of starting right away.
-const MODES: Array[Dictionary] = [
-	{"label": "Free Practice", "sub": "Standard rack, no rules, no clock", "mode": ModeCatalog.Type.FREE_PRACTICE},
-	{"label": "9-Ball", "sub": "Pocket in order, fewest shots wins", "mode": ModeCatalog.Type.NINE_BALL},
-	{"label": "Time Trial", "sub": "Clear racks before time runs out", "mode": ModeCatalog.Type.TIME_TRIAL},
-	{"label": "8-Ball", "sub": "Standard rules, pick your opponent", "mode": ModeCatalog.Type.EIGHT_BALL, "choose_opponent": true},
+const CORNER_MARGIN := 24
+## Second-level menus. Each choice: label, subtitle, mode (ModeCatalog.Type) and opponent
+## (GameSession.computer_opponent value).
+const EIGHT_BALL_CHOICES: Array[Dictionary] = [
+	{"label": "Human vs Human", "sub": "Pass and play on this device", "mode": ModeCatalog.Type.EIGHT_BALL, "opponent": OPPONENT_HUMAN},
+	{"label": "Human vs Computer", "sub": "Play against the computer", "mode": ModeCatalog.Type.EIGHT_BALL, "opponent": OPPONENT_COMPUTER},
 ]
 
-## label, subtitle, GameSession.computer_opponent value.
-const EIGHT_BALL_OPPONENTS: Array[Dictionary] = [
-	{"label": "Human vs Human", "sub": "Pass and play on this device", "opponent": OPPONENT_HUMAN},
-	{"label": "Human vs Computer", "sub": "Play against the computer", "opponent": OPPONENT_COMPUTER},
+const NINE_BALL_CHOICES: Array[Dictionary] = [
+	{"label": "Solo", "sub": "Pocket in order, fewest shots wins", "mode": ModeCatalog.Type.NINE_BALL, "opponent": OPPONENT_DEFAULT},
+	{"label": "Human vs Human", "sub": "Pass and play on this device", "mode": ModeCatalog.Type.NINE_BALL_VERSUS, "opponent": OPPONENT_HUMAN},
+	{"label": "Human vs Computer", "sub": "Play against the computer", "mode": ModeCatalog.Type.NINE_BALL_VERSUS, "opponent": OPPONENT_COMPUTER},
+]
+
+## Main menu entries: label, subtitle, and either
+##   "mode"                  - start this mode right away, or
+##   "prompt" + "choices"    - open a second menu with those choices.
+const MODES: Array[Dictionary] = [
+	{"label": "Free Practice", "sub": "Standard rack, no rules, no clock", "mode": ModeCatalog.Type.FREE_PRACTICE},
+	{"label": "9-Ball", "sub": "Solo or head to head", "prompt": "9-Ball: choose how to play", "choices": NINE_BALL_CHOICES},
+	{"label": "Time Trial", "sub": "Clear racks before time runs out", "mode": ModeCatalog.Type.TIME_TRIAL},
+	{"label": "Target Practice", "sub": "Land the ball on the target, 3 rounds", "mode": ModeCatalog.Type.TARGET_PRACTICE},
+	{"label": "8-Ball", "sub": "Standard rules, pick your opponent", "prompt": "8-Ball: choose your opponent", "choices": EIGHT_BALL_CHOICES},
 ]
 
 var _main_menu: VBoxContainer
-var _opponent_menu: VBoxContainer
-
+## Shared by every second-level menu; refilled by _show_choices().
+var _choice_menu: VBoxContainer
+var _corner_margin: MarginContainer
 
 func _ready() -> void:
 	_build_ui()
@@ -65,23 +76,30 @@ func _build_ui() -> void:
 		_main_menu.add_child(_make_entry(entry["label"], entry["sub"], _on_mode_pressed.bind(entry)))
 	stack.add_child(_main_menu)
 
-	_opponent_menu = _make_menu("8-Ball: choose your opponent")
-	for entry in EIGHT_BALL_OPPONENTS:
-		_opponent_menu.add_child(_make_entry(entry["label"], entry["sub"], _on_opponent_chosen.bind(entry["opponent"])))
-	_opponent_menu.add_child(_make_entry("Back", "", _show_main_menu))
-	_opponent_menu.visible = false
-	stack.add_child(_opponent_menu)
-	
+	_choice_menu = _make_menu("")
+	_choice_menu.visible = false
+	stack.add_child(_choice_menu)
+
+		# Bottom-right corner, kept clear of notches and the home bar (same SafeArea as settings).
+	_corner_margin = MarginContainer.new()
+	_corner_margin.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_corner_margin.mouse_filter = Control.MOUSE_FILTER_IGNORE  # Don't block the menu buttons.
+	layer.add_child(_corner_margin)
+
 	var settings_button := Button.new()
 	settings_button.text = "Settings"
 	settings_button.custom_minimum_size = Vector2(200.0, 64.0)
 	settings_button.add_theme_font_size_override("font_size", 24)
+	settings_button.size_flags_horizontal = Control.SIZE_SHRINK_END
+	settings_button.size_flags_vertical = Control.SIZE_SHRINK_END
 	settings_button.pressed.connect(_open_settings)
-	layer.add_child(settings_button)
-	settings_button.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT, Control.PRESET_MODE_MINSIZE, 24)
+	_corner_margin.add_child(settings_button)
+
+	get_viewport().size_changed.connect(_apply_safe_area)
+	_apply_safe_area()
 
 
-## A column with a prompt label at the top; entries get added by the caller.
+## A column with a prompt label at the top (child 0); entries get added by the caller.
 func _make_menu(prompt_text: String) -> VBoxContainer:
 	var menu := VBoxContainer.new()
 	menu.add_theme_constant_override("separation", 16)
@@ -117,21 +135,30 @@ func _make_entry(label: String, subtitle: String, on_pressed: Callable) -> Contr
 
 
 func _show_main_menu() -> void:
-	_opponent_menu.visible = false
+	_choice_menu.visible = false
 	_main_menu.visible = true
 
 
+## Fills the shared second-level menu with one mode's choices (plus Back) and shows it.
+func _show_choices(entry: Dictionary) -> void:
+	(_choice_menu.get_child(0) as Label).text = entry["prompt"]
+	for i in range(_choice_menu.get_child_count() - 1, 0, -1):  # Keep the prompt label.
+		var child := _choice_menu.get_child(i)
+		_choice_menu.remove_child(child)
+		child.queue_free()
+	for choice in entry["choices"]:
+		_choice_menu.add_child(_make_entry(choice["label"], choice["sub"],
+				_start_game.bind(choice["mode"], choice["opponent"])))
+	_choice_menu.add_child(_make_entry("Back", "", _show_main_menu))
+	_main_menu.visible = false
+	_choice_menu.visible = true
+
+
 func _on_mode_pressed(entry: Dictionary) -> void:
-	if entry.get("choose_opponent", false):
-		GameSession.selected_mode = entry["mode"]  # Remembered while the opponent picker is open.
-		_main_menu.visible = false
-		_opponent_menu.visible = true
+	if entry.has("choices"):
+		_show_choices(entry)
 	else:
 		_start_game(entry["mode"], OPPONENT_DEFAULT)
-
-
-func _on_opponent_chosen(opponent: int) -> void:
-	_start_game(ModeCatalog.Type.EIGHT_BALL, opponent)
 
 
 func _start_game(mode: int, opponent: int) -> void:
@@ -140,8 +167,16 @@ func _start_game(mode: int, opponent: int) -> void:
 	var err := get_tree().change_scene_to_file(pool_game_scene_path)
 	if err != OK:
 		push_error("Could not load '%s' (error %d). Check pool_game_scene_path on the home root node." % [pool_game_scene_path, err])
-		
+
+
 func _open_settings() -> void:
 	var err := get_tree().change_scene_to_file(SETTINGS_SCENE_PATH)
 	if err != OK:
 		push_error("Could not load '%s' (error %d)." % [SETTINGS_SCENE_PATH, err])
+
+func _apply_safe_area() -> void:
+	var viewport := get_viewport()
+	var visible_rect := viewport.get_visible_rect()
+	var safe := SafeArea.get_rect(viewport)
+	_corner_margin.add_theme_constant_override("margin_right", int(visible_rect.end.x - safe.end.x) + CORNER_MARGIN)
+	_corner_margin.add_theme_constant_override("margin_bottom", int(visible_rect.end.y - safe.end.y) + CORNER_MARGIN)

@@ -26,6 +26,18 @@ func solo_stats() -> Array[SoloStat]:
 	return none
 
 
+## Optional: a target to paint on the table (Target Practice). Null = none. PoolGame redraws it
+## after every shot, so a mode may return a different target each round.
+func target_spec() -> TargetSpec:
+	return null
+
+
+## False for modes whose layout must stay exact: PoolGame then skips the rack jitter and does not
+## treat the first shot as a break (no break speed cap, no break aim error).
+func randomize_racks() -> bool:
+	return true
+
+
 ## How many players take turns. 1 = solo (the default). PoolGame creates that many players.
 func player_count() -> int:
 	return 1

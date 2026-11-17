@@ -20,3 +20,12 @@ var cue_placement: CuePlacement = null
 var rerack: LayoutDef = null
 var game_over: bool = false
 var message: String = ""
+
+## Optional pause before the game moves on (used by Target Practice between rounds).
+## When `followup` is valid, PoolGame applies this result right away (score, message), waits
+## `followup_delay` seconds with input off, then calls `followup` and applies the ShotResult it
+## returns (rerack, cue placement, turn) as if that were the shot's result.
+var followup: Callable = Callable()
+var followup_delay: float = 0.0
+## > 0 plays the target "score" effect on the painted target (the points value picks the style).
+var celebrate_points: int = 0
