@@ -35,7 +35,7 @@ static func make(level: int) -> AiConfig:
 			c.max_side_entry_deg = 35.0
 			c.position_weight = 0.0  # Off: the basic AI, best pocketing shot by geometry alone.
 		Level.HARD:
-			c.aim_sigma_deg = 0.1
+			c.aim_sigma_deg = 0.06
 			c.power_sigma = 0.03
 			c.max_cut_deg = 75.0
 			c.max_corner_entry_deg = 65.0

@@ -7,7 +7,7 @@ extends Resource
 ## Std deviation of the aim error, in degrees. This is the whole difficulty knob of the basic AI.
 ## The error at the object ball grows with distance and with the cut angle, so long and thin
 ## shots fail first, like for a real player. ~0.1 = near perfect, ~0.25 = decent, ~0.6 = weak.
-@export_range(0.0, 3.0, 0.01) var aim_sigma_deg: float = 0.25
+@export_range(0.0, 3.0, 0.01) var aim_sigma_deg: float = 0.18
 ## Relative std deviation of the shot power (0.05 = about 5 %).
 @export_range(0.0, 0.3, 0.005) var power_sigma: float = 0.05
 

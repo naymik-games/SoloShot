@@ -20,6 +20,10 @@ var _rng := RandomNumberGenerator.new()
 ## pause with an old ticket has been cancelled and does nothing.
 var _ticket: int = 0
 
+## Cue tip offset chosen for the break together with the spot (see begin_placement); used when the
+## break is shot. Zero when the break wasn't planned by simulation.
+var _break_tip: Vector2 = Vector2.ZERO
+
 
 ## What the controller has decided: the shot and where the cue tip hits the cue ball.
 class Decision extends RefCounted:
@@ -64,7 +68,9 @@ func begin_shot(state: SimState) -> void:
 func begin_placement(state: SimState, placement: CuePlacement) -> void:
 	_ticket += 1
 	var ticket := _ticket
-	var spot := _choose_spot(state, placement)
+	var spot: Vector2 = await _choose_spot(state, placement)
+	if ticket != _ticket:
+		return  # Cancelled while planning the break.
 	await _think(_config.placement_think_time)
 	if ticket != _ticket:
 		return
@@ -91,6 +97,9 @@ func _choose_shot(state: SimState) -> Decision:
 	var plan: AiShotPlanner.Candidate = null
 	if is_break:
 		plan = AiShotPlanner.break_shot(cue.pos, state, targets, _config)
+		if plan != null:
+			plan.tip = _break_tip  # Chosen with the spot by the simulated break.
+		_break_tip = Vector2.ZERO
 	else:
 		if _config.position_weight > 0.0:
 			# Plan on a copy: the look-ahead yields to the renderer now and then.
@@ -123,6 +132,8 @@ func _choose_shot(state: SimState) -> Decision:
 
 	# Noise. Clamped so a rare outlier can't send the ball somewhere absurd.
 	var sigma := _config.aim_sigma_deg
+	if is_break:
+		sigma *= AiShotPlanner.BREAK_AIM_SIGMA_SCALE  # A break is a straight shot at the head ball.
 	var angle_error := clampf(_rng.randfn(0.0, sigma), -2.5 * sigma, 2.5 * sigma)
 	direction = direction.rotated(deg_to_rad(angle_error))
 	if not is_break:  # The break always goes at full power.
@@ -133,7 +144,16 @@ func _choose_shot(state: SimState) -> Decision:
 
 func _choose_spot(state: SimState, placement: CuePlacement) -> Vector2:
 	if _mode.is_break_shot():
-		# Everything is blocked by the rack: just vary the starting spot a little.
+		_break_tip = Vector2.ZERO
+		# Try several spots and tips in the simulator and keep the best break. Plans on a copy:
+		# the look-ahead yields to the renderer now and then.
+		var targets := _legal_targets(state)
+		var plan: AiShotPlanner.BreakPlan = await AiShotPlanner.choose_break(state.clone(), _table,
+				_params, _config, placement, targets, _mode is NineBallVersusMode, _rng)
+		if plan != null:
+			_break_tip = plan.tip
+			return plan.spot
+		# Nothing usable: just vary the starting spot a little.
 		var y := placement.spot.y + _rng.randf_range(-1.0, 1.0) * _config.break_spot_spread * _table.size.y
 		var wish := CuePlacer.constrain(Vector2(placement.spot.x, y), state, _table, placement)
 		if CuePlacer.is_valid(wish, state, _table, placement):

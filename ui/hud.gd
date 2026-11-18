@@ -11,6 +11,7 @@ extends Control
 @export var message_bg: Color = Color(0.0, 0.0, 0.0, 0.6)
 @export_range(0.0, 1.0, 0.01) var message_y_fraction: float = 0.78
 
+@onready var corner_menu: PopupMenu = $corner_menu
 
 var _status: Label
 var _message: Label
@@ -113,4 +114,14 @@ func _apply_safe_area() -> void:
 
 
 func _on_home_button_pressed() -> void:
-	get_tree().change_scene_to_file("res://scenes/home.tscn")
+	corner_menu.visible = true
+
+
+			
+
+func _on_popup_menu_index_pressed(index: int) -> void:
+	match index:
+		0:
+			get_tree().change_scene_to_file("res://scenes/home.tscn")
+		1:
+			get_tree().reload_current_scene()

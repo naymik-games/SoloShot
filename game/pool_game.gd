@@ -29,6 +29,8 @@ enum Phase { SETUP, AIMING, PLACING, SIMULATING, RESOLVING, GAME_OVER, INTERLUDE
 ## Computer opponent tuning. Empty = defaults.
 @export var ai_config: AiConfig
 
+## 8-ball / 9-ball versus: toss a coin to decide who breaks instead of always seat 1.
+@export var coin_flip_for_break: bool = true
 # Typed so GDScript can check member access (shot_requested, mapper, etc.).
 @onready var table_view: TableView = $TableView
 @onready var balls_layer: BallsLayer = $BallsLayer
@@ -204,12 +206,17 @@ func _build_spin_control() -> void:
 
 
 func _start_game() -> void:
+
 	mode = ModeCatalog.create(mode_type, layout)
 	_build_players(mode.player_count())
 	_build_players_panel()
 	mode.setup(state, table_def)
 	_build_solo_panel()
 	_refresh_target()
+	var starter: int = await _decide_breaker()
+	if not is_inside_tree():
+		return
+	turns.current_index = starter
 	mode.on_turn_started(turns.current_index)
 	_refresh_players_panel()
 	_prepare_fresh_rack()
@@ -221,7 +228,23 @@ func _start_game() -> void:
 	else:
 		_set_phase(Phase.AIMING)
 
-
+## Two-player modes: play the coin toss and return the seat that breaks. Otherwise seat 0.
+func _decide_breaker() -> int:
+	if not coin_flip_for_break or turns.count() != 2:
+		return turns.current_index
+	aim_controller.set_input_enabled(false)
+	_set_aim_controls_visible(false)
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	var names: Array[String] = []
+	var colors: Array[Color] = []
+	for p in turns.players:
+		names.append(p.display_name)
+		colors.append(players_panel.avatar_colors[p.index % players_panel.avatar_colors.size()])
+	var overlay := CoinFlipOverlay.new()
+	overlay.setup(names, colors, rng.randi_range(0, 1))
+	_ui_root.add_child(overlay)  # Added last, so it draws over the HUD and controls.
+	return await overlay.finished
 # ---------------------------------------------------------------- players and turns
 
 ## One Player per seat the mode asks for. Seat 2 is the computer when computer_opponent is on;

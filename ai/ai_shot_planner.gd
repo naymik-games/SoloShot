@@ -368,6 +368,134 @@ static func break_shot(cue_pos: Vector2, state: SimState, targets: Array[int], c
 	return best
 
 
+# ---------------------------------------------------------------- break by simulation
+
+## Candidate cue ball positions along the head string, as fractions of the table width
+## added to the placement spot's y (0 = the spot itself, i.e. the center).
+const BREAK_SPOT_FRACTIONS := [-0.3, 0.0, 0.15]
+## Cue tip offsets tried on the break (ball radii; y negative = draw / low).
+const BREAK_TIPS := [Vector2.ZERO, Vector2(0.0, -0.35)]
+## Simulated breaks per (spot, tip). Each adds the AI's aim noise and the simulator's break error.
+const BREAK_SAMPLES: int = 2
+## The break aim noise is this fraction of the normal aim noise (a break is a straight shot at the head ball).
+const BREAK_AIM_SIGMA_SCALE: float = 0.5
+const BREAK_SIM_MAX_TIME: float = 25.0
+const NINE_ID: int = 9
+const BREAK_SCRATCH_PENALTY: float = 80.0
+const BREAK_FOUL_PENALTY: float = 60.0
+const BREAK_ILLEGAL_PENALTY: float = 60.0
+const BREAK_POCKET_BONUS: float = 10.0
+const BREAK_EIGHT_PENALTY: float = 50.0  # 8-ball: the 8 on the break means a re-rack.
+const BREAK_NINE_BONUS: float = 40.0  # 9-ball: the 9 on a legal break wins.
+const BREAK_CENTER_WEIGHT: float = 3.0  # Slight preference for a cue ball left away from the rails.
+const BREAK_CUSHION_BALLS: int = 4  # Same number the modes use for a legal break.
+
+
+class BreakPlan extends RefCounted:
+	var spot: Vector2 = Vector2.ZERO
+	var tip: Vector2 = Vector2.ZERO
+	## Average simulated score (lower is better).
+	var score: float = INF
+
+
+## Plays the break from several spots on the head string with a few tip offsets and picks the best:
+## pocketed balls are rewarded; scratches, fouls and illegal breaks (no ball pocketed and fewer than
+## 4 object balls reaching a cushion) are punished. `nine_ball` switches the rules about the 8 and the 9.
+## A coroutine like best_position_candidate: call it with `await`, and pass a clone of the state.
+static func choose_break(state: SimState, table: TableDef, params: PhysicsParams, cfg: AiConfig,
+		placement: CuePlacement, targets: Array[int], nine_ball: bool,
+		rng: RandomNumberGenerator) -> BreakPlan:
+	var sim_params := params.duplicate() as PhysicsParams
+	sim_params.substep = cfg.position_substep
+	var sim := PoolSimulator.new(table, sim_params)
+	var tree := Engine.get_main_loop() as SceneTree
+	var budget_us := int(cfg.position_frame_budget_ms * 1000.0)
+	var slice_start := Time.get_ticks_usec()
+
+	var best: BreakPlan = null
+	for frac in BREAK_SPOT_FRACTIONS:
+		var wish := CuePlacer.constrain(
+				Vector2(placement.spot.x, placement.spot.y + frac * table.size.y), state, table, placement)
+		if not CuePlacer.is_valid(wish, state, table, placement):
+			continue
+		var head_pos := _nearest_target_pos(wish, state, targets)
+		if head_pos == Vector2.INF:
+			continue
+		var dir := (head_pos - wish).normalized()
+		for tip in BREAK_TIPS:
+			if tree != null and Time.get_ticks_usec() - slice_start > budget_us:
+				await tree.process_frame
+				slice_start = Time.get_ticks_usec()
+			var total := 0.0
+			for s in BREAK_SAMPLES:
+				total += _simulate_break(sim, state, table, cfg, wish, dir, tip, targets, nine_ball, rng)
+			var avg := total / float(BREAK_SAMPLES) + rng.randf() * 0.5  # Tiny jitter: ties vary.
+			if best == null or avg < best.score:
+				best = BreakPlan.new()
+				best.spot = wish
+				best.tip = tip
+				best.score = avg
+	return best
+
+
+static func _nearest_target_pos(from: Vector2, state: SimState, targets: Array[int]) -> Vector2:
+	var best := Vector2.INF
+	var best_dist := INF
+	for id in targets:
+		var ball := state.get_ball(id)
+		if ball == null or not ball.is_on_table():
+			continue
+		var d := ball.pos.distance_to(from)
+		if d < best_dist and d > 1e-4:
+			best_dist = d
+			best = ball.pos
+	return best
+
+
+static func _simulate_break(sim: PoolSimulator, state: SimState, table: TableDef, cfg: AiConfig,
+		spot: Vector2, dir: Vector2, tip: Vector2, targets: Array[int], nine_ball: bool,
+		rng: RandomNumberGenerator) -> float:
+	var after := state.clone()
+	CuePlacer.set_cue_ball(after.get_cue_ball(), spot)
+	var sigma := cfg.aim_sigma_deg * BREAK_AIM_SIGMA_SCALE
+	var d := dir.rotated(deg_to_rad(clampf(rng.randfn(0.0, sigma), -2.5 * sigma, 2.5 * sigma)))
+	var events: Array[SimEvent] = []
+	sim.apply_shot(after, Shot.new(d, cfg.break_power), true, rng, tip)
+	sim.run_to_rest(after, BREAK_SIM_MAX_TIME, events)
+	var report := ShotReport.new()
+	report.add_events(events)
+
+	var cushion_balls := {}
+	for e in events:
+		if e.type == SimEvent.Type.BALL_CUSHION and e.ball_a != ShotReport.CUE_ID:
+			cushion_balls[e.ball_a] = true
+	var pocketed := report.object_balls_pocketed()
+
+	var score := 0.0
+	var foul := false
+	if report.cue_pocketed:
+		score += BREAK_SCRATCH_PENALTY
+		foul = true
+	elif not report.detect_fouls(targets, false).is_empty():
+		score += BREAK_FOUL_PENALTY
+		foul = true
+	if pocketed.is_empty() and cushion_balls.size() < BREAK_CUSHION_BALLS:
+		score += BREAK_ILLEGAL_PENALTY
+		foul = true
+	if not foul:
+		for id in pocketed:
+			if not nine_ball and id == EIGHT_ID:
+				score += BREAK_EIGHT_PENALTY
+			elif nine_ball and id == NINE_ID:
+				score -= BREAK_NINE_BONUS
+			else:
+				score -= BREAK_POCKET_BONUS
+	var cue := after.get_cue_ball()
+	if cue != null and cue.is_on_table():
+		score += BREAK_CENTER_WEIGHT * cue.pos.distance_to(table.size * 0.5) / table.size.x
+	return score
+
+
 # ---------------------------------------------------------------- ball in hand
 
 ## The best spot for the cue ball inside what `placement` allows: the grid point from which the

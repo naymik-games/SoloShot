@@ -22,7 +22,9 @@ mode_type = 2
 table_def = ExtResource("2_xsq6e")
 physics_params = ExtResource("3_c06dw")
 aim_config = ExtResource("7_ht80v")
+debug_print_shot_report = null
 computer_opponent = true
+coin_flip_for_break = null
 
 [node name="TextureRect" type="TextureRect" parent="." unique_id=745439995]
 custom_minimum_size = Vector2(1152, 648)
@@ -97,6 +99,16 @@ texture_normal = ExtResource("15_tsh5i")
 ignore_texture_size = true
 stretch_mode = 4
 
+[node name="corner_menu" type="PopupMenu" parent="UI/HUD" unique_id=1027173597]
+theme_override_font_sizes/font_size = 22
+item_count = 3
+item_0/text = "Home"
+item_0/id = 0
+item_1/text = "Restart"
+item_1/id = 1
+item_2/text = "Pause"
+item_2/id = 2
+
 [node name="VBoxContainer" type="VBoxContainer" parent="UI" unique_id=1593733105]
 anchors_preset = 1
 anchor_left = 1.0
@@ -108,3 +120,4 @@ offset_bottom = 551.0
 grow_horizontal = 0
 
 [connection signal="pressed" from="UI/HUD/home_button" to="UI/HUD" method="_on_home_button_pressed"]
+[connection signal="index_pressed" from="UI/HUD/corner_menu" to="UI/HUD" method="_on_popup_menu_index_pressed"]
